@@ -1,1 +1,1 @@
-# SPOTAI
+# Spot-AI Project
