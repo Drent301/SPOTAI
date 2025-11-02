@@ -3,11 +3,6 @@ import time
 import os 
 
 # Bepaal het pad naar het state-bestand
-# __file__ is core/statebus.py
-# os.path.abspath(__file__) is C:\...\SPOTAI\core\statebus.py
-# os.path.dirname(...) is C:\...\SPOTAI\core
-# os.path.dirname(...) is C:\...\SPOTAI
-# Dit maakt het pad robuust, ongeacht hoe het script wordt aangeroepen
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 STATE_FILE = os.path.join(DATA_DIR, 'statebus.json')
@@ -16,7 +11,7 @@ class StateBus:
     def __init__(self):
         # Zorg dat de data map bestaat
         os.makedirs(DATA_DIR, exist_ok=True)
-        
+
         self.state = self.load_state()
         print("StateBus geïnitialiseerd.")
 
@@ -29,7 +24,8 @@ class StateBus:
             print(f"StateBus: {STATE_FILE} niet gevonden, maak een nieuwe aan.")
             return {"network_state": "unknown", "last_update": 0}
         except json.JSONDecodeError:
-            print(f"StateBus: Fout bij lezen {STATE_FILE}, maak een nieuwe aan.")
+            # Dit kan gebeuren als twee scripts tegelijk schrijven
+            print(f"StateBus: Fout bij lezen {STATE_FILE}, gebruik lege staat.")
             return {"network_state": "unknown", "last_update": 0}
 
     def save_state(self):
@@ -48,11 +44,18 @@ class StateBus:
         print(f"StateBus: {key} ingesteld op {value}")
 
     def get_value(self, key):
-        """Haalt een waarde op uit de staat."""
+        """Haalt een waarde op uit de (in-memory) staat."""
         return self.state.get(key, None)
 
+    def reload_state(self):
+        """
+        *** NIEUWE FUNCTIE ***
+        Herlaadt de staat vanaf de schijf.
+        Dit is cruciaal om data van externe processen te zien.
+        """
+        self.state = self.load_state()
+
 if __name__ == "__main__":
-    # Dit is om de module direct te testen
     print("StateBus module test...")
     bus = StateBus()
     bus.set_value("robot_mode", "idle")

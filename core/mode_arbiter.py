@@ -9,7 +9,7 @@ class ModeArbiter:
 
     def get_mode(self):
         """Bepaalt en retourneert de huidige robot-modus."""
-        
+
         # Haal relevante data uit de statebus (dit wordt later gevuld)
         last_voice_command = self.statebus.get_value("last_voice_command_ts")
         last_human_seen = self.statebus.get_value("last_human_seen_ts")
@@ -26,7 +26,7 @@ class ModeArbiter:
         if last_voice_command and (current_time - last_voice_command < 10):
             self.current_mode = "listening"
             return self.current_mode
-            
+
         # 3. Prioriteit: Interactie met mens
         if last_human_seen and (current_time - last_human_seen < 30):
             self.current_mode = "social"
@@ -41,9 +41,9 @@ if __name__ == "__main__":
     print("ModeArbiter module test...")
     bus = StateBus()
     arbiter = ModeArbiter(bus)
-    
+
     print(f"Huidige modus: {arbiter.get_mode()}")
-    
+
     print("Simuleer zien van mens...")
     bus.set_value("last_human_seen_ts", time.time())
     print(f"Nieuwe modus: {arbiter.get_mode()}")
