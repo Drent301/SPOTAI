@@ -2,7 +2,12 @@ import time
 import requests
 from core.statebus import StateBus
 from core.mode_arbiter import ModeArbiter
-from agent.agent_runtime import parse_and_execute_advice  # BELANGRIJKE IMPORT
+
+# BELANGRIJKE IMPORT: We halen de parser uit de agent_runtime
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from agent.agent_runtime import parse_and_execute_advice  
 
 # De Rasa NLU server draait (in de toekomst) lokaal
 RASA_URL = "http://localhost:5005/model/parse"
@@ -27,7 +32,7 @@ class IntentEngine:
                 print(f"[IntentEngine] Rasa serverfout: {response.status_code}")
                 return "nlu_error"
         except requests.ConnectionError:
-            print("[IntentEngine] Kan Rasa server op localhost:5005 niet bereiken.")
+            # Dit is nu een verwachte "fout"
             return "nlu_offline"
 
     def run_loop(self):
@@ -35,12 +40,11 @@ class IntentEngine:
         try:
             while True:
                 start_time = time.time()
-                
+
                 # Herlaad de staat vanaf schijf
                 self.statebus.reload_state()
-                
+
                 # --- Stap 1: Verwerk GPT Advies ---
-                # Kijk of de 'denker' (agent_runtime) advies heeft
                 gpt_advice = self.statebus.get_value("last_gpt_advice")
                 if gpt_advice:
                     print(f"[IntentEngine] Nieuw GPT Advies Gevonden: '{gpt_advice}'")
@@ -48,13 +52,13 @@ class IntentEngine:
                     parse_and_execute_advice(gpt_advice)
                     # Wis het advies na verwerking
                     self.statebus.set_value("last_gpt_advice", None)
-                
+
                 # --- Stap 2: Bepaal Modus ---
                 mode = self.arbiter.get_mode()
-                
+
                 # --- Stap 3: Haal Sensor Data op ---
                 voice_command = self.statebus.get_value("pending_voice_command")
-                
+
                 # --- Stap 4: Handel af op basis van modus ---
                 if mode == "listening" and voice_command:
                     self.statebus.set_value("pending_voice_command", None)
@@ -63,7 +67,7 @@ class IntentEngine:
 
                 elif mode == "social":
                     self.statebus.set_value("robot_action", "social_greet")
-                
+
                 elif mode == "idle":
                     self.statebus.set_value("robot_action", "idle_wander")
 
@@ -80,6 +84,6 @@ class IntentEngine:
 if __name__ == "__main__":
     bus = StateBus()
     engine = IntentEngine(bus)
-    
+
     print("IntentEngine klaar. Starten van run_loop()...")
     engine.run_loop()
