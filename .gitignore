@@ -1,0 +1,10 @@
+# Virtualenv
+venv/
+*.pyc
+__pycache__/
+.env
+
+# Data & Logs (deze wil je misschien wel back-uppen, maar niet altijd in Git)
+*.json
+*.ndjson
+*.log
