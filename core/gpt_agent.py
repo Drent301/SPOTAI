@@ -2,95 +2,111 @@ import requests
 import json
 import time
 import os
-# We importeren de StateBus klasse uit het statebus.py bestand in dezelfde map
+from typing import Optional
 from core.statebus import StateBus 
+from core.config_manager import ConfigManager # NIEUWE IMPORT
 
 # !!! VERVANG DIT MET JE ECHTE DIGITALOCEAN IP-ADRES !!!
+# Let op: de IP-adres in de code is ter demonstratie en moet het IP van uw Droplet zijn.
 REFLECTOR_API_URL = "http://159.223.217.1/reflect"
 
 class GptAgent:
     def __init__(self, statebus: StateBus):
         self.statebus = statebus
+        self.config_manager = ConfigManager() # Voor eventuele config-waarden
         print("GptAgent (Fase 4) geïnitialiseerd.")
 
-    def get_recent_logs(self, lines=20):
+    def get_recent_logs(self, lines=20) -> str:
         """Laadt de laatste 'n' regels uit het experience.ndjson log."""
-        # We bouwen het pad naar het databestand
         log_path = os.path.join('data', 'experience.ndjson')
         try:
             with open(log_path, 'r') as f:
-                # Lees alle regels en neem de laatste 'n'
                 all_logs = f.readlines()
                 recent_logs = all_logs[-lines:]
-                return "".join(recent_logs) # Stuur als één string
+                return "".join(recent_logs)
         except FileNotFoundError:
-            print(f"GptAgent: {log_path} nog niet gevonden.")
             return "Geen logs beschikbaar."
         except Exception as e:
-            print(f"GptAgent: Fout bij lezen logs: {e}")
             return f"Log leesfout: {e}"
 
-    def trigger_reflection(self, model="gpt-4-mini"):
+    def check_connection(self) -> bool:
+        """
+        Controleert de verbinding met de reflector_api op DigitalOcean.
+        Dit is de basis voor de network_state-logica.
+        """
+        try:
+            # Probeer de root-endpoint aan te roepen
+            response = requests.get(REFLECTOR_API_URL.replace("/reflect", ""), timeout=5)
+            response.raise_for_status()
+            
+            # Als de verbinding succesvol is, stel de status in
+            self.statebus.set_value("network_state", "online")
+            return True
+        except requests.exceptions.RequestException:
+            # Als de verbinding mislukt (timeout, 4xx/5xx, etc.)
+            print("[GptAgent] Connectie Fout: Kan DigitalOcean niet bereiken.")
+            self.statebus.set_value("network_state", "offline")
+            return False
+
+    def trigger_reflection(self, task_type: str = "strategy") -> Optional[dict]:
         """
         Activeert een reflectie-call naar de DigitalOcean API.
-        Dit is een 'event-triggered' reflectie.
+        task_type: 'strategy' (GPT-4o) of 'basic_talk' (GPT-3.5-turbo)
         """
-        print(f"Start GPT-reflectie (model: {model})...")
+        # --- Stap 1: Model Switching (Kostenoptimalisatie) ---
+        model_map = {
+            "strategy": "gpt-4o",
+            "basic_talk": "gpt-3.5-turbo"
+        }
+        model_to_use = model_map.get(task_type, "gpt-4o")
+
+        print(f"Start GPT-reflectie (model: {model_to_use}, taak: {task_type})...")
         
-        # 1. Haal huidige staat op
+        # --- Stap 2: Check Verbinding ---
+        if not self.check_connection():
+            print("[GptAgent] Offline. Reflectie geannuleerd.")
+            return None
+
+        # --- Stap 3: Data Voorbereiden en Roep API aan ---
         current_state = self.statebus.load_state()
-        
-        # 2. Haal recente logs op
         logs_data = self.get_recent_logs()
         
-        # 3. Bereid de data voor
         payload = {
             "state": current_state,
             "logs": logs_data,
-            "model": model
+            "model": model_to_use
         }
         
-        # 4. Roep de cloud API aan
         try:
             start_time = time.time()
             response = requests.post(REFLECTOR_API_URL, json=payload, timeout=15.0)
             latency = time.time() - start_time
             
-            # Stopt als de HTTP-status 4xx of 5xx is
             response.raise_for_status() 
             
             result = response.json()
-            # De API stuurt een JSON-string terug, we parsen die
             reflection_json = json.loads(result.get("reflection", "{}"))
             
             print(f"Reflectie succesvol ontvangen (in {latency:.2f}s).")
             print(f"Analyse: {reflection_json.get('analyse')}")
             
-            # Verwerk het advies
             advies = reflection_json.get('advies')
             if advies:
-                print(f"Advies ontvangen: {advies}")
-                # We slaan het advies op in de statebus voor de runtime
+                # Advies opslaan in statebus voor de AgentRuntime/IntentEngine
                 self.statebus.set_value("last_gpt_advice", advies)
             
             return reflection_json
 
-        except requests.exceptions.HTTPError as e:
-            # Fout van de server (bijv. 500)
-            print(f"HTTP Fout tijdens reflectie: {e.response.status_code} {e.response.text}")
+        except requests.exceptions.RequestException as e:
+            print(f"Connectie Fout tijdens reflectie: {e}. Gaat offline.")
             self.statebus.set_value("network_state", "offline")
-        except requests.exceptions.ConnectionError:
-            # Server is niet bereikbaar
-            print(f"Connectie Fout: Kan API op {REFLECTOR_API_URL} niet bereiken. Gaat offline.")
-            self.statebus.set_value("network_state", "offline")
-        except Exception as e:
-            print(f"Onbekende fout tijdens reflectie: {e}")
+            return None
+
 
 if __name__ == "__main__":
     # Dit is een test-script om te controleren of de verbinding werkt
-    # Voer dit uit vanuit de HOOFDMAP (SPOTAI) met: python -m core.gpt_agent
     
-    print("GptAgent module test...")
+    print("GptAgent module test (Fase A.4)...")
     
     # Zorg dat de data-map en statebus bestaan voor de test
     os.makedirs('data', exist_ok=True)
@@ -106,5 +122,5 @@ if __name__ == "__main__":
     bus = StateBus()
     agent = GptAgent(bus)
     
-    print(f"Test-aanroep naar {REFLECTOR_API_URL}...")
-    agent.trigger_reflection(model="gpt-4o")
+    print(f"Test-aanroep (Strategy) naar {REFLECTOR_API_URL}...")
+    agent.trigger_reflection(task_type="strategy")
