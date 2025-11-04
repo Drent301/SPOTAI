@@ -1,16 +1,18 @@
 import time
 import os
 import random
+import threading # Nodig voor de test
 from core.statebus import StateBus
-from typing import Dict, Any
+from core.config_manager import ConfigManager # Nodig voor get_setting
 
-# Hoge-frequentie loop voor sensoren (bijvoorbeeld 100 Hz, of 200 Hz voor IMU)
+# Hoge-frequentie loop voor sensoren (bijvoorbeeld 100 Hz)
 SENSOR_LOOP_HZ = 100 
 LOOP_INTERVAL = 1.0 / SENSOR_LOOP_HZ
 
 class BridgeReceiver:
     def __init__(self, statebus: StateBus):
         self.statebus = statebus
+        self.config_manager = ConfigManager()
         self._running = True
         print(f"BridgeReceiver (Fase B.2 - Unitree ROS) geïnitialiseerd op {SENSOR_LOOP_HZ} Hz.")
 
@@ -21,6 +23,7 @@ class BridgeReceiver:
         """
         print("[BridgeReceiver] Sensor Loop gestart. Druk op Ctrl+C om te stoppen.")
         
+        # De lus om sensors te lezen is continu en moet snel zijn
         while self._running:
             start_time = time.time()
             
@@ -30,30 +33,24 @@ class BridgeReceiver:
             imu_accel_x = 0.0 + random.uniform(-0.01, 0.01)
             imu_gyro_z = 0.0 + random.uniform(-0.005, 0.005)
 
-            # Unitree/ROS Voetkracht Topic: /foot_force
-            foot_force_front_left = 100.0 + random.uniform(-5, 5)
-
             # Ruwe Grove Sensor Data (Touch/Nabijheid)
             touch_sensor_back = random.choice([True, False])
+            
+            # Lees configuratie voor gevoeligheid (Fase B.4)
+            gezichtsgevoeligheid = self.config_manager.get_setting("GEZICHTSDETECTIEGEVOELIGHEID")
 
             # --- STAP 2: Schrijf naar StateBus in Unitree ROS-Format ---
             
-            # A. IMU Data
+            # A. IMU Data (voor balans)
             self.statebus.set_value(
                 "imu_data", 
                 {"accel": [imu_accel_x, 0.0, 9.8], "gyro": [0.0, 0.0, imu_gyro_z]}
             )
             
-            # B. Voetkracht Data (nodig voor balans en Bandit-learning)
-            self.statebus.set_value(
-                "foot_force",
-                {"fl": foot_force_front_left, "fr": 100.0, "rl": 100.0, "rr": 100.0}
-            )
-
-            # C. Grove Sensors
+            # B. Grove Sensors (voor fysieke veiligheid)
             self.statebus.set_value(
                 "touch_data",
-                {"back": touch_sensor_back}
+                {"back": touch_sensor_back, "sensor_sensitivity": gezichtsgevoeligheid}
             )
 
             # Zorgt voor 100 Hz synchronisatie
@@ -62,8 +59,6 @@ class BridgeReceiver:
             if sleep_time > 0:
                 time.sleep(sleep_time)
             
-            # print(f"[BridgeReceiver] Data verstuurd. Lag: {elapsed*1000:.2f} ms")
-
 
     def stop(self):
         self._running = False
@@ -71,18 +66,24 @@ class BridgeReceiver:
 
 if __name__ == "__main__":
     # Test om te zien of de loop werkt
-    from core.statebus import StateBus # Nodig voor de test
-    
     bus = StateBus()
     receiver = BridgeReceiver(bus)
     
-    t = threading.Thread(target=receiver.run_sensor_loop)
-    t.start()
+    # Simuleer een threading.Thread om de loop te laten draaien
+    class MockThread:
+        def __init__(self, target):
+            self._target = target
+            
+        def start(self):
+            # Voer de loop slechts 1 seconde uit voor de test
+            for _ in range(SENSOR_LOOP_HZ):
+                self._target()
+                
+    t = MockThread(target=receiver.run_sensor_loop)
     
-    time.sleep(1) 
+    t.start()
     
     # Check een gelogde waarde
     print(f"Laatste IMU-waarde: {bus.get_value('imu_data')}")
     
     receiver.stop()
-    t.join()
