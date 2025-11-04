@@ -1,111 +1,110 @@
 import time
-import requests
-import json
 import os
+import random
+import threading 
 from core.statebus import StateBus
-from core.mode_arbiter import ModeArbiter
+from core.config_manager import ConfigManager 
 
-# BELANGRIJKE IMPORTS VOOR DE FIX
-import sys
-from core.config_manager import ConfigManager
-from core.log_writer import LogWriter
-# We hebben de oude parse_and_execute_advice niet meer nodig omdat LangGraph het overneemt.
-
-# --- Mock Functies voor Externe Services ---
-# De Rasa NLU server draait (in de toekomst) lokaal
-RASA_URL = "http://localhost:5005/model/parse"
+# De Intent Engine werkt op een midden-frequentie
+INTENT_LOOP_HZ = 10
+LOOP_INTERVAL = 1.0 / INTENT_LOOP_HZ
 
 class IntentEngine:
+    """
+    Fase B.5a: Verwerkt ruwe data (spraak, perceptie, sensoren) tot een geconsolideerde 
+    intentie voor de Mode Arbiter.
+    """
     def __init__(self, statebus: StateBus):
         self.statebus = statebus
-        # NIEUW: Initialiseer de ConfigManager en LogWriter
         self.config_manager = ConfigManager()
-        self.log_writer = LogWriter() 
-        self.arbiter = ModeArbiter(self.statebus)
-        self.loop_interval = 0.05 # 20 Hz loop
-        print("IntentEngine (Fase 2) geïnitialiseerd. Start 20Hz loop...")
+        self._running = True
+        
+        # Leest configuratie voor gedragsprioriteiten (Fase B.0)
+        self.autonomy_level = self.config_manager.get_setting("AUTONOMY_LEVEL")
+        self.reflection_priority = self.config_manager.get_setting("REFLECTIE_PRIORITEIT")
 
-    def get_rasa_intent(self, command: str) -> str:
-        """Haalt de intentie op van de mock Rasa server."""
-        try:
-            response = requests.post(
-                'http://127.0.0.1:5005/model/parse', 
-                json={'text': command},
-                timeout=0.5
+        print(f"IntentEngine (Fase B.5a) geïnitialiseerd. Autonomie: {self.autonomy_level}.")
+        print(f"Prioriteit: {self.reflection_priority}")
+
+    def run_intent_loop(self):
+        """
+        De hoofdloop die alle inputs combineert en een actuele intentie bepaalt.
+        """
+        print(f"[IntentEngine] Loop gestart op {INTENT_LOOP_HZ} Hz.")
+        
+        while self._running:
+            start_time = time.time()
+            
+            # --- 1. Lees alle Inputs van de StateBus ---
+            latest_intent_speech = self.statebus.get_value("latest_intent")
+            detections = self.statebus.get_value("detections")
+            touch_data = self.statebus.get_value("touch_data")
+            
+            # --- 2. Beslis de geconsolideerde Intentie ---
+            consolidated_intent = self._determine_priority_intent(
+                latest_intent_speech, detections, touch_data
             )
-            data = response.json()
-            return data.get('intent', {}).get('name', 'unknown_intent')
-        except requests.exceptions.RequestException as e:
-            print(f"[IntentEngine] ERROR: Rasa server niet bereikbaar: {e}")
-            return "unknown_intent"
+            
+            # --- 3. Schrijf naar StateBus voor Mode Arbiter ---
+            self.statebus.set_value("current_consolidated_intent", consolidated_intent)
+            
+            # Synchronisatie
+            elapsed = time.time() - start_time
+            sleep_time = LOOP_INTERVAL - elapsed
+            if sleep_time > 0:
+                time.sleep(sleep_time)
 
-    def run_loop(self):
-        """De hoofdloop van de IntentEngine (20 Hz)."""
-        try:
-            while True:
-                start_time = time.time()
-                
-                # Herlaad de staat vanaf schijf (voor de laatste sensorwaarden)
-                self.statebus.reload_state()
-                
-                # *** FIX: Haal alle config-waarden op via de ConfigManager ***
-                # Dit is de juiste manier om configuratiewaarden te gebruiken.
-                current_config = self.config_manager.config
-                
-                # --- Stap 1: Haal de huidige status op ---
-                voice_command = self.statebus.get_value("pending_voice_command")
-                is_person_nearby = self.statebus.get_value("vision_person_nearby")
-                
-                # --- Stap 2: Bepaal de huidige Modus (Mode Arbiter) ---
-                mode = self.arbiter.get_mode() 
-                self.statebus.set_value("robot_mode", mode)
-                
-                # --- Stap 3: Log de huidige status (voor reflectie) ---
-                print(f"[IntentEngine] Mode: {mode}. Person: {is_person_nearby}. Command: {voice_command}. Speed: {current_config.get('OBSTACLE_RESPONSE_SPEED', 'N/A')}")
-                
-                # --- Stap 4: Handel af op basis van modus ---
-                action = None
-                
-                if mode == "listening" and voice_command:
-                    self.statebus.set_value("pending_voice_command", None) 
-                    intent = self.get_rasa_intent(voice_command)
-                    action = f"execute_{intent}"
-                    self.statebus.set_value("robot_action", action)
+    def _determine_priority_intent(self, speech: dict, detections: list, touch: dict) -> dict:
+        """
+        Consolideert alle inputs tot één actuele, geordende intentie.
+        Veiligheid heeft altijd prioriteit.
+        """
+        
+        # A. Fysieke veiligheid (Hoogste Prioriteit)
+        if touch.get("back", False):
+            return {"type": "emergency", "action": "stop_motors", "reason": "Fysieke aanraking", "confidence": 1.0}
+            
+        # B. Spraakintentie (Hoog)
+        if speech and speech.get("confidence", 0) > 0.8:
+            # Als spraak 'move_command' is, vertaal naar motoractie
+            if speech['intent'] == 'move_command':
+                 return {"type": "motor_action", "action": "walk_forward", "source": "speech", "confidence": speech['confidence']}
+            # Als spraak 'query_name' is, vertaal naar spraakactie
+            if speech['intent'] == 'query_name':
+                 return {"type": "speech_action", "action": "answer_name", "source": "speech", "confidence": speech['confidence']}
+        
+        # C. Visuele intentie (Midden)
+        if detections:
+            for det in detections:
+                if det.get("type") == "gezicht" and det.get("emotie") == "blij" and det.get("confidence", 0) > self.gezichtsgevoeligheid:
+                    return {"type": "social_action", "action": "approach_and_greet", "source": "perception", "confidence": det['confidence']}
+        
+        # D. Standaard / Leeg (Laag)
+        return {"type": "idle", "action": "monitor", "source": "none", "confidence": 1.0}
 
-                elif mode == "social":
-                    action = "social_greet"
-                    self.statebus.set_value("robot_action", action)
-                
-                elif mode == "idle":
-                    action = "idle_wander"
-                    self.statebus.set_value("robot_action", action)
-                
-                # *** LOG HET EVENEMENT NA HET BEPALEN VAN DE ACTIE (Fase A.3) ***
-                if action:
-                    self.log_writer.log_event(
-                        event_type="ACTION_DETERMINED",
-                        details={"action": action, "mode": mode},
-                        context={"config_speed": current_config.get('OBSTACLE_RESPONSE_SPEED')}
-                    )
 
-                # --- Stap 5: Wacht tot de volgende lus ---
-                elapsed_time = time.time() - start_time
-                sleep_time = self.loop_interval - elapsed_time
-                if sleep_time > 0:
-                    time.sleep(sleep_time)
-
-        except KeyboardInterrupt:
-            print("\nIntentEngine gestopt door gebruiker.")
-        except Exception as e:
-            print(f"\nIntentEngine FATALE FOUT: {e}")
-
+    def stop(self):
+        self._running = False
+        print("[IntentEngine] Gestopt.")
 
 if __name__ == "__main__":
+    # Test vereist dat de StateBus gevuld is met gesimuleerde data
     bus = StateBus()
-    # Initialiseer de status
-    bus.set_value("pending_voice_command", "Stop met bewegen")
-    bus.set_value("vision_person_nearby", True)
     
-    # Start de engine
+    # 1. Simuleer inputs (zoals door B.2, B.3, B.4 geschreven)
+    bus.set_value("latest_intent", {"intent": "move_command", "confidence": 0.9, "action": "forward"})
+    bus.set_value("detections", [{"type": "gezicht", "emotie": "blij", "confidence": 0.95}])
+    bus.set_value("touch_data", {"back": False})
+    
     engine = IntentEngine(bus)
-    engine.run_loop()
+    
+    t = threading.Thread(target=engine.run_intent_loop)
+    t.start()
+    
+    time.sleep(1) # Laat de lus draaien
+    
+    # Controleer de uitvoer
+    print(f"Laatste Geconsolideerde Intentie: {bus.get_value('current_consolidated_intent')}")
+    
+    engine.stop()
+    t.join()
