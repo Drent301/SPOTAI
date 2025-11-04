@@ -7,7 +7,13 @@ from operator import itemgetter
 from dotenv import load_dotenv 
 
 # Voeg de hoofdmap toe voor core-modules
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
+# --- NIEUWE IMPORTS: Importeer alle tools uit de submappen ---
+from agent.tools.config_tools import set_config 
+from agent.tools.system_tools import restart_service, log_reflection
+from agent.tools.motor_tools import tune_gain
+from agent.tools.code_tools import edit_code, rollback, generate_doc
 
 # Importeer kernmodules
 from core.statebus import StateBus
@@ -16,72 +22,28 @@ from core.config_manager import ConfigManager
 from core.memory_manager import MemoryManager
 
 # Importeer LangGraph componenten
-from langchain_core.tools import tool
+from langchain_core.tools import tool # Hier niet direct nodig, maar voor de types
 from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
 
 # --- Configuratie Fix ---
-# DE FIX: Laad de variabelen uit het .env bestand zodat LangChain ze kan vinden
 load_dotenv() 
 
-# --- 1. Tool Definities (Whitelisted Functies) ---
+# --- 1. Tool Definities (Verzameling) ---
 
-@tool
-def set_config(key: str, value: str) -> str:
-    """(Niveau 1) Past een configuratieparameter veilig aan (bv. 'OBSTACLE_RESPONSE_SPEED', '0.8')."""
-    
-    cm = ConfigManager()
-    
-    # Guardrail: Valideer hier de input (bv. voor obstakelsnelheid)
-    if key == "OBSTACLE_RESPONSE_SPEED":
-        try:
-            numeric_value = float(value)
-            if not (0.1 <= numeric_value <= 2.0):
-                return f"ERROR: Waarde {value} voor {key} buiten veilige marge (0.1-2.0s)."
-        except ValueError:
-            return f"ERROR: Waarde {value} voor {key} moet een nummer zijn."
-    
-    # Schrijf de nieuwe setting weg (Persistente opslag in config.json)
-    cm.set_setting(key, value)
-    print(f"[AgentRuntime] TOOL GEVOERD: set_config({key}, {value})")
-    
-    # Update de statebus voor snelle notificatie naar de IntentEngine
-    bus = StateBus()
-    bus.set_value(f"config_{key}", value)
-    
-    return f"CONFIG_UPDATED: '{key}' persistent opgeslagen als '{value}'. De motorische laag kan deze nu lezen."
-
-@tool
-def restart_service(service_name: str) -> str:
-    """(Niveau 2) Herstart een gespecificeerde systemd-service (bv. 'motor_control')."""
-    if service_name not in ["motor_control", "vision_stack", "nlu_service"]:
-        return f"ERROR: Service '{service_name}' staat niet op de whitelist voor herstarten."
-
-    print(f"[AgentRuntime] TOOL GEVOERD: restart_service({service_name})")
-    return f"SERVICE_RESTARTED: {service_name} is succesvol opnieuw opgestart."
-
-@tool
-def tune_gain(servo_id: str, gain_value: str) -> str:
-    """(Niveau 2) Past de gain van een servo aan, gebruikt voor Bandit-learning."""
-    print(f"[AgentRuntime] TOOL GEVOERD: tune_gain({servo_id}, {gain_value})")
-    return f"GAIN_TUNED: Servo {servo_id} gain is ingesteld op {gain_value}."
-
-@tool
-def suggest_update(description: str) -> str:
-    """(Niveau 5) Schrijft een voorstel naar updates/pending.txt (veilig)."""
-    print(f"[AgentRuntime] TOOL GEVOERD: suggest_update('{description}')")
-    try:
-        os.makedirs('updates', exist_ok=True)
-        with open('updates/pending.txt', 'a') as f:
-            f.write(f"[{time.ctime()}] {description}\n")
-        return "UPDATE_SUGGESTED: Voorstel is opgeslagen in updates/pending.txt."
-    except Exception as e:
-        return f"ERROR: Kon update niet opslaan: {e}"
-
-
-# Verzamel alle tools die de agent mag gebruiken
-tools = [set_config, restart_service, tune_gain, suggest_update]
+# Verzamel alle tools die de LangGraph Agent mag gebruiken
+# Deze worden nu uit de geïmplementeerde bestanden gehaald:
+tools = [
+    set_config, 
+    restart_service, 
+    tune_gain, 
+    log_reflection,
+    # Niveau 5 Tools (Placeholders):
+    edit_code,
+    rollback,
+    generate_doc
+]
 
 
 # --- 2. LangGraph Workflow Definities ---
@@ -92,8 +54,9 @@ class AgentState(TypedDict):
     tool_calls: Optional[Sequence[dict]]
     tool_output: Optional[str]
 
-# 2a. GPT Model met Tools (LangGraph kan nu initialiseren dankzij de fix)
+# 2a. GPT Model met Tools (LangGraph kan nu initialiseren)
 model = ChatOpenAI(model="gpt-4o", temperature=0.0)
+# FIX: Bind alle geëxporteerde tools aan het GPT-model
 agent_with_tools = model.bind_tools(tools)
 
 def call_model(state: AgentState) -> AgentState:
@@ -102,6 +65,8 @@ def call_model(state: AgentState) -> AgentState:
     messages = [HumanMessage(content=state["input"])]
     
     # We forceren de Tool Call voor deze LangGraph test
+    # De output van deze functie is wat GPT zou genereren als reactie op de input.
+    # We behouden de gehardcodeerde test-toolcall die we in eerdere stappen gevalideerd hebben.
     return {"chat_history": messages, "tool_calls": [{"name": "set_config", "args": {"key": "OBSTACLE_RESPONSE_SPEED", "value": "0.8"}}]} 
 
 
@@ -113,7 +78,11 @@ def execute_tool(state: AgentState) -> AgentState:
     tool_name = tool_call["name"]
     tool_args = tool_call["args"]
 
-    tool_to_call = {tool.name: tool for tool in tools}[tool_name]
+    # FIX: Haal de tool op uit de globale lijst van tools
+    tool_to_call = next((t for t in tools if t.name == tool_name), None)
+    
+    if tool_to_call is None:
+        raise ValueError(f"LangGraph Error: Tool '{tool_name}' niet gevonden in de tools lijst.")
     
     print(f"[AgentRuntime] LangGraph voert tool '{tool_name}' uit met args: {tool_args}")
     
@@ -154,7 +123,7 @@ def process_gpt_advice(advice: str):
 
 
 def main_runtime_loop():
-    print("AgentRuntime (Fase 4 - LangGraph) gestart. Druk op Ctrl+C om te stoppen.")
+    print("AgentRuntime (Fase C.2 - LangGraph) gestart. Druk op Ctrl+C om te stoppen.")
     bus = StateBus()
     agent = GptAgent(bus)
     
@@ -166,7 +135,7 @@ def main_runtime_loop():
             time.sleep(REFLECTION_INTERVAL_SEC)
             
             print("[RuntimeLoop] 1. Start periodieke reflectie...")
-            # FIX: model="gpt-4o" is vervangen door task_type="strategy" om de TypeError op te lossen
+            # Dit roept de reflector_api aan en slaat advies op in statebus
             gpt_advies_tekst = agent.trigger_reflection(task_type="strategy") 
             
             print("[RuntimeLoop] 2. Haal laatste advies op van StateBus...")
