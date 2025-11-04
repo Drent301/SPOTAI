@@ -1,115 +1,140 @@
 import time
-import os
-import random
-import threading 
+import json
+import threading
 from core.statebus import StateBus
-from core.config_manager import ConfigManager 
+from core.config_manager import ConfigManager
 
-# Spraakverwerking is trager dan de sensorloop (bijvoorbeeld 5 Hz)
-SPEECH_LOOP_HZ = 5 
-LOOP_INTERVAL = 1.0 / SPEECH_LOOP_HZ
+# Mock-imports voor de speech-componenten
+# In de definitieve Pi-setup zijn dit Vosk, Piper en een Rasa HTTP-client
+class VoskASR:
+    def recognize(self, audio_data):
+        # Simuleert offline spraakherkenning
+        if b"move forward" in audio_data:
+            return "Loop naar voren."
+        if b"hello" in audio_data:
+            return "Hoi Spot."
+        return None
+
+class PiperTTS:
+    def synthesize(self, text):
+        # Simuleert vloeiende spraaksynthese
+        print(f"[TTS] Synthesizing: '{text}'...")
+        # Simuleer de latency van de spraakuitvoer
+        time.sleep(len(text) / 20) 
+        return b"Audio data for " + text.encode()
+
+class RasaClient:
+    def get_intent(self, text):
+        # Simuleert lokale NLU (Natural Language Understanding)
+        if "loop naar voren" in text.lower():
+            return {"intent": "move_command", "confidence": 0.95, "action": "forward"}
+        if "hoi spot" in text.lower() or "wat is je naam" in text.lower():
+            return {"intent": "query_name", "confidence": 0.85, "action": "answer_name"}
+        # Offline fallback voor onbekende zinnen
+        return {"intent": "offline_fallback", "confidence": 0.7, "action": "answer_offline_fallback"}
 
 class SpeechProcessor:
     """
-    Fase B.3: Centrale module voor spraakverwerking (ASR, TTS, NLU).
-    Gebruikt Vosk/Piper/Rasa in de uiteindelijke implementatie.
+    Fase B.3: De centrale orchestrator voor offline spraak (ASR, NLU, TTS).
+    Leest de robot_action en voert de juiste spraak/taak uit.
     """
     def __init__(self, statebus: StateBus):
         self.statebus = statebus
         self.config_manager = ConfigManager()
         self._running = True
         
-        # Leest configuratie voor spraakparameters (Fase B.0)
-        self.pitch = self.config_manager.get_setting("SPEECH_PITCH")
-        self.tone = self.config_manager.get_setting("SPEECH_TONE")
-        print(f"SpeechProcessor (Fase B.3) geïnitialiseerd. Huidige toon: {self.tone} (Pitch: {self.pitch}).")
-
-    def _simulate_vosk_asr(self) -> str:
-        """Simuleert Vosk ASR (Speech-to-Text)."""
-        # In een echte implementatie leest deze de microfoon en Vosk model.
-        if random.random() < 0.1: # 10% kans op een spraakcommando
-            return random.choice(["loop naar voren", "wat is jouw naam", "ben je moe"])
-        return ""
-
-    def _simulate_rasa_nlu(self, text: str) -> dict:
-        """Simuleert Rasa NLU (Natural Language Understanding) of Intent Engine."""
-        if not text:
-            return {"intent": "none", "confidence": 1.0}
-
-        # Stuurt spraak naar de intent_engine (later te implementeren)
-        if "loop" in text:
-            return {"intent": "move_command", "confidence": 0.95, "action": "forward"}
-        if "naam" in text:
-            return {"intent": "query_name", "confidence": 0.88}
+        # Initialisatie van lokale componenten
+        self.asr = VoskASR()
+        self.tts = PiperTTS()
+        self.nlu = RasaClient()
         
-        return {"intent": "unknown", "confidence": 0.5}
+        # Microfooninstellingen
+        self.mic_sensitivity = self.config_manager.get_setting("MICROFOONGEVOELIGHEID")
+        self.vad_threshold = self.config_manager.get_setting("VAD_THRESHOLD")
+        
+        print("SpeechProcessor (Fase B.3) geïnitialiseerd (Vosk/Piper/Rasa).")
 
-    def _simulate_piper_tts(self, response: str):
-        """Simuleert Piper TTS (Text-to-Speech) op basis van configuratie."""
-        if response:
-            print(f"[TTS - {self.tone}, Pitch={self.pitch:.1f}] Zegt: '{response}'")
+    def _listen_for_audio(self):
+        """Simuleert continu luisteren via ReSpeaker HAT."""
+        # Dit zou in een aparte thread/loop op de Pi draaien.
+        print("[ASR] Luistert op de achtergrond...")
+        # Simuleer luister-events: een commando na 5 seconden.
+        time.sleep(5) 
+        # Simuleer ontvangen audiobuffer (met commando)
+        return b"Some background noise... move forward ... end of speech."
+        
+    def _execute_speech_action(self, action: str):
+        """
+        Voert de actie uit die door de Mode Arbiter is gekozen (via StateBus).
+        """
+        if action == "answer_name":
+            response_text = "Mijn naam is Spot-AI. Ik ben een open-source sociale robot."
+            self.tts.synthesize(response_text)
+            
+        elif action == "answer_offline_fallback":
+            response_text = "Ik ben momenteel offline, maar ik luister. Vraag iets anders!"
+            self.tts.synthesize(response_text)
+            
+        elif action == "speak_agent_response":
+            # Wordt gebruikt als de GPT Agent een antwoord heeft gegenereerd
+            gpt_response = self.statebus.get_value("gpt_response_text", "Ik heb geen reactie ontvangen van de cognitieve kern.")
+            self.tts.synthesize(gpt_response)
+            
+        elif action == "monitor_sensors":
+            pass # Geen spraakuitvoer, enkel monitoring
+            
+        else:
+            # Onbekende acties (bijv. motoriek) worden hier genegeerd
+            pass
 
     def run_speech_loop(self):
-        """
-        De hoofdloop voor het verwerken van spraak:
-        Luisteren -> NLU -> Response genereren -> Spreken.
-        """
-        print(f"[SpeechProcessor] Loop gestart op {SPEECH_LOOP_HZ} Hz.")
+        """De hoofdloop van de SpeechProcessor."""
+        LOOP_INTERVAL = 1.0 / 5.0 # 5 Hz loop
         
         while self._running:
             start_time = time.time()
             
-            # 1. Spraak Herkennen (ASR)
-            transcribed_text = self._simulate_vosk_asr()
+            # 1. Spraakherkenning (ASR)
+            raw_audio = self._listen_for_audio() 
+            transcription = self.asr.recognize(raw_audio)
             
-            if transcribed_text:
-                print(f"\n[ASR] Gehoord: {transcribed_text}")
+            if transcription:
+                # 2. Intentie Bepaling (NLU)
+                intent_data = self.nlu.get_intent(transcription)
                 
-                # 2. Intent Herkennen (NLU)
-                nlu_result = self._simulate_rasa_nlu(transcribed_text)
+                # 3. Schrijf de intentie naar de StateBus voor de IntentEngine (B.5a)
+                self.statebus.set_value("latest_intent", intent_data)
                 
-                # Schrijf intentie naar de StateBus (voor de Mode Arbiter)
-                self.statebus.set_value("latest_intent", nlu_result)
-                print(f"[NLU] Intentie: {nlu_result['intent']} (Confidence: {nlu_result['confidence']:.2f})")
-                
-                # 3. Response Genereren (TTS)
-                response = self._generate_response(nlu_result)
-                
-                # 4. Spraak Synthese (TTS)
-                self._simulate_piper_tts(response)
-
-            # Synchronisatie
+            # 4. Spraakuitvoer (TTS) - Luister naar de Mode Arbiter
+            robot_action = self.statebus.get_value("robot_action")
+            self._execute_speech_action(robot_action)
+            
+            # 5. Synchronisatie
             elapsed = time.time() - start_time
             sleep_time = LOOP_INTERVAL - elapsed
             if sleep_time > 0:
                 time.sleep(sleep_time)
-
-    def _generate_response(self, nlu_result: dict) -> str:
-        """Eenvoudige logica om een antwoord te genereren op basis van de intentie."""
-        intent = nlu_result['intent']
-        if intent == "move_command":
-            return "Ik beweeg nu. Waar moet ik naartoe?"
-        if intent == "query_name":
-            return "Mijn naam is Spot AI, en ik ben hier om te leren."
-        if intent == "unknown":
-            return "Dat heb ik niet begrepen. Kunt u dat herhalen?"
-        return ""
 
     def stop(self):
         self._running = False
         print("[SpeechProcessor] Gestopt.")
 
 if __name__ == "__main__":
+    # Test vereist dat de IntentEngine de final actie bepaalt, maar hier focussen we op de Speech-loop zelf.
     bus = StateBus()
+    
+    # Simuleer een actie die de Arbiter zou kunnen kiezen
+    bus.set_value("robot_action", "answer_name")
+    
     processor = SpeechProcessor(bus)
     
     t = threading.Thread(target=processor.run_speech_loop)
     t.start()
     
-    # Laat de processor 5 seconden draaien
-    time.sleep(5) 
+    time.sleep(7) # Geef tijd voor luisteren en spreken
+    
+    # De processor heeft nu de intentie van "move forward" naar de StateBus geschreven
+    print(f"Laatste Intentie geschreven: {bus.get_value('latest_intent')}")
     
     processor.stop()
     t.join()
-    
-    print(f"Laatste intentie in StateBus: {bus.get_value('latest_intent')}")
