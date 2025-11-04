@@ -7,14 +7,32 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 CONFIG_FILE = os.path.join(DATA_DIR, 'config.json')
 
-# Standaardinstellingen (gebaseerd op documenten)
+# Standaardinstellingen (UITGEBREID met alle parameters uit GPT-ControlMatrix)
 DEFAULT_CONFIG = {
-    "MOTOR_LOOP_HZ": 20, # De intent-loop
-    "REFLECTION_INTERVAL_SEC": 30,
-    "AUTONOMY_LEVEL": 0.5,
-    "SPEECH_TONE": "vrolijk",
-    "OBSTACLE_RESPONSE_SPEED": 1.2, # Standaard vertraagd
+    # I. Configuratie & Gedragsparameters
+    "LOOPSNELHEID": 0.5, 
+    "ACCELERATIE": 0.2,
+    "BOCHTRADIUS": 0.8,
+    "VOETDRUKCORRECTIE": 0.0,
     "PID_BALANCE_GAIN": 0.35, # Basiswaarde voor tune_gain
+    "SPEECH_TONE": "vrolijk",
+    "SPEECH_PITCH": 1.0,
+    "SPEECH_SNELHEID": 1.0,
+    "SPEECH_EMOTIE_KLEUR": "groen",
+    "EMOTIE_DISPLAY_KLEUR": "#00ff00",
+    "EMOTIE_DISPLAY_EXPRESSIE": "neutraal",
+    "GEZICHTSDETECTIEGEVOELIGHEID": 0.85, 
+    "CAMERA_RESOLUTIE": "1280x720",
+    "AUTONOMY_LEVEL": 0.5,
+    
+    # II. Leren & Reflectie
+    "EXPLORATIEGRAAD": 0.2, # Parameter voor Bandit-learning
+    "REFLECTIE_PRIORITEIT": "mensen eerst", 
+    "REFLECTIE_BATCH_GROOTTE": 100, 
+
+    # III. Systeem & Optimalisatie (Bestaande)
+    "OBSTACLE_RESPONSE_SPEED": 1.2, # Standaard vertraagd (GPT geoptimaliseerd)
+    "REFLECTION_INTERVAL_SEC": 30, # De loop frequentie van de GPT-agent
 }
 
 class ConfigManager:
@@ -50,23 +68,22 @@ class ConfigManager:
 
     def set_setting(self, key: str, value: Any):
         """Slaat een instelling op en schrijft weg."""
-        if key not in DEFAULT_CONFIG:
-            print(f"WAARSCHUWING: '{key}' is geen bekende configuratieparameter.")
+        # WAARSCHUWING: Geen key check, zodat GPT zelf nieuwe keys kan toevoegen, 
+        # maar dit wordt gevalideerd door LangGraph's Guardrails in agent/agent_runtime.py
         
         self.config[key] = value
         self.save_config()
         print(f"ConfigManager: '{key}' persistent opgeslagen als {value}")
 
 if __name__ == "__main__":
-    # Test om te zien of de manager werkt en waarden opslaat
     print("ConfigManager module test...")
     cm = ConfigManager()
     
-    # Test set_setting
-    cm.set_setting("SPEECH_TONE", "neutraal")
-    print(f"Nieuwe tone: {cm.get_setting('SPEECH_TONE')}")
+    # Test instelling van GPT-ControlMatrix
+    cm.set_setting("EXPLORATIEGRAAD", 0.5)
+    print(f"Nieuwe exploratiegraad: {cm.get_setting('EXPLORATIEGRAAD')}")
     
     # Simuleer herstart
     del cm
     cm_reboot = ConfigManager()
-    print(f"Na reboot is tone: {cm_reboot.get_setting('SPEECH_TONE')}")
+    print(f"Na reboot is gevoeligheid: {cm_reboot.get_setting('GEZICHTSDETECTIEGEVOELIGHEID')}")
