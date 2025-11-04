@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import time
+import random
 from typing import Dict, Any, Optional
 
 # Voeg de hoofdmap toe
@@ -12,7 +13,7 @@ from core.memory_manager import MemoryManager
 
 # Simuleert het gebruik van de lokale LLM omgeving (Ollama + Llama-3)
 class OllamaClient:
-    """Mock-client voor de lokale Llama-3 LLM."""
+    """Mock-client voor de lokale Llama-3 LLM (llama-3-8b-instruct)."""
     def reflect(self, prompt: str) -> str:
         # Simuleer Llama-3 (8B) antwoordtijd van ~0.5 - 1.5 seconden
         time.sleep(random.uniform(0.5, 1.5))
@@ -86,12 +87,7 @@ class OfflineReflector:
             
             print(f"[OfflineReflector] Llama-3 advies: {llm_response}")
             
-            # De logica om lokaal advies toe te passen zou hier komen
-            # (bijv. aanpassing van een parameter zonder set_config tool)
-            
             # Log de reflectie voor latere synchronisatie (Fase A.3)
-            # Dit is de 'offline logs' opslag
-            # De LogWriter zou dit opslaan in /data/offline_logs/reflect_*.json
             
             return llm_response
         return ""
