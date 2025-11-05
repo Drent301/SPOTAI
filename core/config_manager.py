@@ -23,7 +23,7 @@ DEFAULT_CONFIG = {
     "EMOTIE_DISPLAY_EXPRESSIE": "neutraal",
     "GEZICHTSDETECTIEGEVOELIGHEID": 0.85, 
     "CAMERA_RESOLUTIE": "1280x720",
-    "AUTONOMY_LEVEL": 0.5,
+    "AUTONOMY_LEVEL": 0.7,
     
     # II. Leren & Reflectie
     "EXPLORATIEGRAAD": 0.2, # Parameter voor Bandit-learning
@@ -62,9 +62,9 @@ class ConfigManager:
         except IOError as e:
             print(f"ConfigManager: Kon niet naar {CONFIG_FILE} schrijven: {e}")
 
-    def get_setting(self, key: str) -> Any:
+    def get_setting(self, key: str, default: Any = None) -> Any:
         """Haalt een instelling op."""
-        return self.config.get(key)
+        return self.config.get(key, default)
 
     def set_setting(self, key: str, value: Any):
         """Slaat een instelling op en schrijft weg."""

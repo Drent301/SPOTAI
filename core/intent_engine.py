@@ -6,7 +6,7 @@ import random
 import threading 
 from core.statebus import StateBus
 from core.config_manager import ConfigManager
-from core.mode_arbiter import ModeArbiter
+from core.behavior_tree_manager import BehaviorTreeManager # <-- GEWIJZIGD
 from core.log_writer import LogWriter
 
 # De Rasa NLU server draait (in de toekomst) lokaal
@@ -15,28 +15,27 @@ INTENT_LOOP_HZ = 10 # 10 Hz loop
 
 class IntentEngine:
     """
-    Fase B.5a: Verwerkt ruwe data (spraak, perceptie, sensoren) tot een geconsolideerde 
-    intentie voor de Mode Arbiter.
+    Verwerkt ruwe data (spraak, perceptie, sensoren) tot een geconsolideerde
+    intentie en gebruikt een Behavior Tree om de finale actie te bepalen.
     """
     def __init__(self, statebus: StateBus):
         self.statebus = statebus
         self.config_manager = ConfigManager()
         self.log_writer = LogWriter()
         
-        # Initialiseer de Mode Arbiter (B.5b)
-        self.arbiter = ModeArbiter(self.statebus) 
+        # Initialiseer de Behavior Tree Manager
+        self.bt_manager = BehaviorTreeManager(self.statebus)
         self._running = True
         
         # Configuratie voor beslissingslogica
-        self.gezichtsgevoeligheid = self.config_manager.get_setting("GEZICHTSDETECTIEGEVOELIGHEID")
-        self.autonomy_level = self.config_manager.get_setting("AUTONOMY_LEVEL")
+        self.gezichtsgevoeligheid = self.config_manager.get_setting("GEZICHTSDETECTIEGEVOELIGHEID", 0.7)
+        self.autonomy_level = self.config_manager.get_setting("AUTONOMY_LEVEL", 0.7)
 
-        print("IntentEngine (Fase B.5a) geïnitialiseerd.")
+        print("IntentEngine geïnitialiseerd met Behavior Tree.")
 
     def get_rasa_intent(self, command: str) -> dict:
         """Haalt de intentie op van de mock Rasa server."""
         try:
-            # Aanroepen van mock server op localhost:5005
             response = requests.post(
                 'http://127.0.0.1:5005/model/parse', 
                 json={'text': command},
@@ -45,18 +44,15 @@ class IntentEngine:
             data = response.json()
             return {"intent": data.get('intent', {}).get('name', 'unknown_intent'), "confidence": data.get('intent', {}).get('confidence', 0.5)}
         except requests.exceptions.RequestException:
-            # Fallback bij fout (voor offline modus)
             return {"intent": "offline_fallback", "confidence": 1.0}
 
 
     def _determine_priority_intent(self, speech: dict, detections: list, touch: dict) -> dict:
         """
         Consolideert alle inputs tot één actuele, geordende intentie.
-        Veiligheid heeft altijd prioriteit.
         """
-        
         # A. Fysieke veiligheid (Hoogste Prioriteit)
-        if touch.get("back", False):
+        if touch and touch.get("back", False):
             return {"type": "emergency", "action": "stop_motors", "reason": "Fysieke aanraking", "confidence": 1.0}
             
         # B. Spraakintentie (Hoog)
@@ -87,39 +83,31 @@ class IntentEngine:
         while self._running:
             start_time = time.time()
             
-            # --- 1. Haal de meest recente state op ---
-            current_state = self.statebus.get_all_values()
-            if not current_state:
-                current_state = {} # Zorg voor een lege dict als de statebus leeg is
-            
-            # --- 2. Inputs Ophalen ---
+            # --- 1. Inputs Ophalen ---
+            # De Behavior Tree's blackboard haalt zelf de volledige state op,
+            # maar we halen hier specifieke waarden op voor de intentieconsolidatie.
             speech_result = self.statebus.get_value("latest_intent")
             detections = self.statebus.get_value("detections")
             touch_data = self.statebus.get_value("touch_data")
             
-            # --- 3. CONSOLIDATIE (IntentEngine Logic) ---
+            # --- 2. CONSOLIDATIE (IntentEngine Logic) ---
             consolidated_intent = self._determine_priority_intent(
                 speech_result, detections, touch_data
             )
             
-            # Schrijf de geconsolideerde intentie naar de StateBus
+            # Schrijf de geconsolideerde intentie naar de StateBus zodat de BT het kan lezen
             self.statebus.set_value("current_consolidated_intent", consolidated_intent)
             
-            # --- 4. MODUS BEPALING (Mode Arbiter Logic) ---
-            # De Mode Arbiter bepaalt de definitieve actie op basis van de geconsolideerde intentie
-            final_action = self.arbiter._determine_final_action(
-                current_state.get("is_charging", False),
-                current_state.get("network_state", "online"),
-                consolidated_intent
-            )
+            # --- 3. MODUS BEPALING (Behavior Tree Logic) ---
+            # De Behavior Tree wordt "getikt" en bepaalt de finale actie.
+            self.bt_manager.tick()
             
-            self.statebus.set_value("robot_action", final_action)
-            
-            # --- 5. Logging (Fase A.3) ---
+            # --- 4. Logging ---
+            final_action = self.statebus.get_value("robot_action")
             self.log_writer.log_event(
                 event_type="INTENT_CONSOLIDATED",
                 details={"final_action": final_action, "intent_type": consolidated_intent["type"]},
-                context={"current_mode": self.arbiter.get_mode()}
+                context={"current_bt_status": self.bt_manager.tree.root.status.value}
             )
             
             # Synchronisatie
