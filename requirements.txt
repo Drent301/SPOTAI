@@ -1,0 +1,12 @@
+rclpy
+pygame
+smbus2
+RPi.GPIO
+opencv-python
+vosk
+piper-tts
+uvicorn
+fastapi
+openai
+langgraph
+sounddevice
