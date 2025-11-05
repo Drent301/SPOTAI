@@ -14,6 +14,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Imu, JointState
+from std_msgs.msg import String # <-- TOEGEVOEGD: Voor vision-detecties
 # --- Einde ROS 2 Imports ---
 
 
@@ -37,10 +38,19 @@ class ROSBridge(Node): # <-- Erft nu direct van de ROS 2 Node
         # We abonneren op sensor-topics en schrijven ze naar de StateBus
         self.create_subscription(Imu, "/imu/data", self._imu_callback, 10) # <-- Gebruikt echt Imu-type
         self.create_subscription(JointState, "/joint_states", self._joint_states_callback, 10)
+        self.create_subscription(String, "/vision/detections", self._vision_callback, 10) # <-- TOEGEVOEGD
 
         self.get_logger().info("ROSBridge Succesvol geïnitialiseerd (publishers/subscribers gemaakt).")
 
     # --- Callbacks: Data van ROS 2 naar StateBus ---
+
+    def _vision_callback(self, msg: String):
+        """ Ontvangt JSON-string met detecties van de vision node. """
+        try:
+            detections = json.loads(msg.data)
+            self.bus.set_value("vision_detections", detections)
+        except json.JSONDecodeError:
+            self.get_logger().error("Kon de JSON van /vision/detections niet parsen.")
 
     def _imu_callback(self, msg: Imu):
         """ Ontvangt IMU-data van ROS 2 en schrijft dit naar de StateBus. """
