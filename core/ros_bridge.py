@@ -82,8 +82,9 @@ class ROSBridge(Node): # <-- Erft nu direct van de ROS 2 Node
         """
         self.get_logger().info("Publish-loop (StateBus -> ROS 2) gestart op 10 Hz.")
         while self._running:
-            self.bus.reload_state()
-            action = self.bus.get_value("robot_action", "monitor_sensors")
+            action = self.bus.get_value("robot_action")
+            if action is None:
+                action = "monitor_sensors" # Fallback als de state leeg is
 
             # Vertaal StateBus-actie naar ROS 2 /cmd_vel bericht
             msg = Twist() # <-- Maak een echt Twist-bericht object
@@ -117,34 +118,27 @@ class ROSBridge(Node): # <-- Erft nu direct van de ROS 2 Node
         self.get_logger().info("Stop-signaal ontvangen. Node wordt afgesloten.")
         self.destroy_node() # Maak de node resources vrij
 
-if __name__ == "__main__":
-    rclpy.init() # Initialiseer ROS 2
+def main(args=None):
+    rclpy.init(args=args)
     
     bus = StateBus()
     bridge = ROSBridge(bus)
 
-    # Start de twee loops in aparte threads
+    # De spin_loop blokkeert, dus de publish_loop moet in een aparte thread
     pub_thread = threading.Thread(target=bridge.run_publish_loop, daemon=True)
-    spin_thread = threading.Thread(target=bridge.run_spin_loop, daemon=True)
-
     pub_thread.start()
-    spin_thread.start()
 
     try:
-        print("ROSBridge draait. Simuleer een 'walk' commando voor 3 seconden...")
-        bus.set_value("robot_action", "walk_forward")
-        time.sleep(3)
-
-        print("ROSBridge draait. Simuleer een 'stop' commando...")
-        bus.set_value("robot_action", "monitor_sensors")
-        time.sleep(5)
-
+        # De spin_loop is de 'hoofd'-loop voor een ROS 2-node
+        bridge.run_spin_loop()
     except KeyboardInterrupt:
-        print("[Main] Stop-signaal ontvangen...")
+        print("[ROSBridge] Stop-signaal ontvangen...")
     finally:
         bridge.stop()
-        print("[Main] Wacht op threads...")
-        pub_thread.join(timeout=1)
-        spin_thread.join(timeout=1)
-        print("[Main] Afgesloten.")
-        rclpy.shutdown() # Sluit ROS 2 netjes af
+        if pub_thread.is_alive():
+            pub_thread.join(timeout=1)
+        rclpy.shutdown()
+        print("[ROSBridge] Netjes afgesloten.")
+
+if __name__ == "__main__":
+    main()

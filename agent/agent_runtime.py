@@ -122,7 +122,7 @@ def process_gpt_advice(advice: str):
     return final_state["tool_output"]
 
 
-def main_runtime_loop():
+def main():
     print("AgentRuntime (Fase C.2 - LangGraph) gestart. Druk op Ctrl+C om te stoppen.")
     bus = StateBus()
     agent = GptAgent(bus)
@@ -156,4 +156,4 @@ def main_runtime_loop():
         print("\nAgentRuntime gestopt door gebruiker.")
 
 if __name__ == "__main__":
-    main_runtime_loop()
+    main()

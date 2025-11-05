@@ -87,9 +87,10 @@ class IntentEngine:
         while self._running:
             start_time = time.time()
             
-            # --- 1. Herlaad alle Inputs ---
-            self.statebus.reload_state()
-            current_state = self.statebus.state
+            # --- 1. Haal de meest recente state op ---
+            current_state = self.statebus.get_all_values()
+            if not current_state:
+                current_state = {} # Zorg voor een lege dict als de statebus leeg is
             
             # --- 2. Inputs Ophalen ---
             speech_result = self.statebus.get_value("latest_intent")
@@ -131,24 +132,15 @@ class IntentEngine:
         self._running = False
         print("[IntentEngine] Gestopt.")
 
-if __name__ == "__main__":
-    # Test vereist dat de ModeArbiter ook de final actie kan bepalen.
+def main():
     bus = StateBus()
-    
-    # Simuleer inputs
-    bus.set_value("latest_intent", {"intent": "move_command", "confidence": 0.9, "action": "forward"})
-    bus.set_value("detections", [{"type": "gezicht", "emotie": "blij", "confidence": 0.95}])
-    bus.set_value("touch_data", {"back": False})
-    
     engine = IntentEngine(bus)
     
-    t = threading.Thread(target=engine.run_intent_loop)
-    t.start()
-    
-    time.sleep(1)
-    
-    # Controleer de uitvoer (finale actie wordt door de Arbiter bepaald)
-    print(f"Finale Actie (van Arbiter): {bus.get_value('robot_action')}")
-    
-    engine.stop()
-    t.join()
+    try:
+        engine.run_intent_loop()
+    except KeyboardInterrupt:
+        engine.stop()
+        print("IntentEngine gestopt door gebruiker.")
+
+if __name__ == "__main__":
+    main()

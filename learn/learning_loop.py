@@ -26,9 +26,10 @@ class LearningLoop:
     """
     def __init__(self, state_bus: StateBus):
         self.bus = state_bus
-        self.log_writer = LogWriter(state_bus)
+        self.log_writer = LogWriter()
         self.bandit_learner = BanditLearner(state_bus)
         self.offline_reflector = OfflineReflector(state_bus)
+        self._running = True
         
         # Simuleer de start van de leerprocessen
         self.bus.set_value("learning_loop_status", "active")
@@ -38,7 +39,7 @@ class LearningLoop:
         """De centrale leerloop (1 Hz)."""
         print(f"[LearningLoop] Loop gestart op {LEARNING_LOOP_HZ} Hz. Druk op Ctrl+C om te stoppen.")
         
-        while True:
+        while self._running:
             start_time = time.time()
             
             # --- STAP 1: Lokale Optimalisatie (Bandit-Learning) ---
@@ -49,7 +50,13 @@ class LearningLoop:
             # Voert mini-reflectie uit als de robot offline is
             self.offline_reflector.trigger_mini_reflection()
             
-            # --- STAP 3: Periodieke Reflectie Logging ---
+            # --- STAP 3: Log de leercyclus ---
+            self.log_writer.log_event(
+                event_type="LEARNING_CYCLE_COMPLETED",
+                details={"bandit_gains": self.bandit_learner.current_gains}
+            )
+
+            # --- STAP 4: Periodieke Reflectie Logging ---
             # Dit is een voorbeeld om de LogWriter te testen met een batch.
             if random.random() < 0.05: # 5% kans om te loggen, of eenmaal per minuut
                 self.log_writer.log_offline_reflect_batch(
@@ -64,26 +71,19 @@ class LearningLoop:
                 time.sleep(sleep_time)
 
     def stop(self):
+        self._running = False
         self.bus.set_value("learning_loop_status", "inactive")
         print("[LearningLoop] Gestopt.")
 
-# Test code voor lokale uitvoering
-if __name__ == '__main__':
+def main():
     bus = StateBus()
-    
-    # Simuleer benodigde waarden voor de test (voor BanditLearner)
-    bus.set_value("imu_vibration_rms", 0.2)
-    bus.set_value("motor_energy_load", 0.3)
-    
     learner = LearningLoop(bus)
     
-    print("\nStart Learning Loop simulatie...")
-    t = threading.Thread(target=learner.run_loop)
-    t.start()
-    
-    time.sleep(3) # Laat de loop 3 seconden draaien
-    
-    learner.stop()
-    t.join()
-    
-    print("\nSimulatie voltooid.")
+    try:
+        learner.run_loop()
+    except KeyboardInterrupt:
+        learner.stop()
+        print("LearningLoop gestopt door gebruiker.")
+
+if __name__ == '__main__':
+    main()

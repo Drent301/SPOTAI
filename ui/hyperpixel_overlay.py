@@ -7,6 +7,7 @@ import math
 
 # Voeg de hoofdmap toe voor core-imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from core.statebus import StateBus # <-- GEWIJZIGD
 
 # Instellen van de display-driver voor de HyperPixel
 os.environ['SDL_FBDEV'] = '/dev/fb1'
@@ -24,16 +25,14 @@ PUPIL_RADIUS = 30
 EYE_OFFSET_X = 120 # Afstand van het midden
 EYE_Y = CENTER_Y - 50
 
-# Pad naar het UI-statusbestand
-UI_STATE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'ui_state.json')
-
 class EyeDisplay:
     """
     Beheert de PyGame-overlay voor de Spot-AI ogen.
-    Leest de gewenste status uit ui_state.json (gevuld door emotion_mapper).
+    Leest de gewenste status nu direct uit de StateBus.
     """
     def __init__(self):
         print("[EyeDisplay] Initialiseren...")
+        self.bus = StateBus() # <-- GEWIJZIGD
         pygame.init()
         pygame.mouse.set_visible(False)
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.NOFRAME)
@@ -50,13 +49,13 @@ class EyeDisplay:
         self._running = False
 
     def load_ui_state(self):
-        """Leest de UI-staat uit het JSON-bestand."""
-        try:
-            with open(UI_STATE_FILE, 'r') as f:
-                state = json.load(f)
-                self.current_color = tuple(state.get('color', (0, 255, 0)))
-                self.current_emotion = state.get('emotion', 'unknown')
-        except (FileNotFoundError, json.JSONDecodeError):
+        """Leest de UI-staat nu uit de StateBus."""
+        state = self.bus.get_value("ui_state")
+        if state:
+            self.current_color = tuple(state.get('color', (0, 255, 0)))
+            self.current_emotion = state.get('emotion', 'unknown')
+        else:
+            # Fallback als de statebus leeg is
             self.current_color = (50, 50, 50)
             self.current_emotion = "error_loading"
             
@@ -71,7 +70,7 @@ class EyeDisplay:
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     self._running = False
 
-            # 1. Lees de gewenste status (van emotion_mapper)
+            # 1. Lees de gewenste status (van emotion_mapper via StateBus)
             self.load_ui_state()
             
             # 2. Teken de UI
@@ -145,13 +144,14 @@ class EyeDisplay:
             self._draw_idle_eyes(color)
 
 
-if __name__ == "__main__":
-    # Zorg dat de 'data' map bestaat voor de test
-    data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
-    os.makedirs(data_dir, exist_ok=True)
-    
+def main():
+    # De __main__ block is nu simpeler, geen noodzaak om voor bestanden te zorgen
+    display = EyeDisplay()
     try:
-        display = EyeDisplay()
         display.run_display_loop()
     except KeyboardInterrupt:
         print("\n[Main] Stop-signaal ontvangen.")
+        display.stop()
+
+if __name__ == "__main__":
+    main()

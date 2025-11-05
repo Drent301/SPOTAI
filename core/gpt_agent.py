@@ -70,7 +70,7 @@ class GptAgent:
             return None
 
         # --- Stap 3: Data Voorbereiden en Roep API aan ---
-        current_state = self.statebus.load_state()
+        current_state = self.statebus.get_all_values()
         logs_data = self.get_recent_logs()
         
         payload = {
@@ -110,18 +110,16 @@ if __name__ == "__main__":
     
     print("GptAgent module test (Fase A.4)...")
     
-    # Zorg dat de data-map en statebus bestaan voor de test
-    os.makedirs('data', exist_ok=True)
-    if not os.path.exists('data/statebus.json'):
-        with open('data/statebus.json', 'w') as f:
-            json.dump({"test_mode": True}, f)
-        
     # Maak dummy data/experience.ndjson aan voor de test
+    os.makedirs('data', exist_ok=True)
     with open('data/experience.ndjson', 'w') as f:
         f.write('{"ts": 12345, "event": "robot_gestart"}\n')
         f.write('{"ts": 12346, "event": "obstakel_gezien"}\n')
     
     bus = StateBus()
+    # Voor de test, zorg dat er een testwaarde in de statebus staat
+    bus.set_value("test_mode", True)
+
     agent = GptAgent(bus)
     
     print(f"Test-aanroep (Strategy) naar {REFLECTOR_API_URL}...")

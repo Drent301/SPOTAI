@@ -7,7 +7,7 @@ Het systeem is gebouwd op een **hybride architectuur**:
 1.  Een **Cognitieve Laag (het Brein)**, geschreven in puur Python, die beslissingen neemt.
 2.  Een **Hardware Laag (het Zenuwstelsel)**, die draait op **ROS 2** en de sensoren en motoren aanstuurt.
 
-Alle communicatie tussen deze lagen wordt beheerd door een centrale `StateBus` (`data/statebus.json`), waardoor het brein en het zenuwstelsel volledig losgekoppeld zijn.
+Alle communicatie tussen deze lagen wordt beheerd door een centrale **Redis-gebaseerde `StateBus`**, waardoor het brein en het zenuwstelsel volledig losgekoppeld en real-time gesynchroniseerd zijn.
 
 ## Project Status: Hardware-Ready
 
@@ -23,7 +23,7 @@ Alle services worden parallel gestart door het hoofdscript: `SpotAI-Launcher.sh`
 
 Dit is de "denkende" laag van de robot, die los van ROS 2 draait.
 
-  * **`core/statebus.py`**: Het centrale "prikbord" (`statebus.json`) waar alle modules hun status lezen en schrijven.
+  * **`core/statebus.py`**: Biedt een high-level interface naar de **Redis-database**, die fungeert als het centrale "prikbord" waar alle modules hun status lezen en schrijven.
   * **`core/intent_engine.py`**: Leest alle sensor-inputs van de StateBus (o.a. van ROS 2) en consolideert deze tot één duidelijke "geconsolideerde intentie".
   * **`core/mode_arbiter.py`**: De "eindbaas". Kijkt naar de intentie, batterijstatus en netwerkstatus en neemt de definitieve beslissing over de `robot_action` (bv. "walk\_forward").
 
@@ -117,8 +117,22 @@ pip install -r requirements.txt
 
 ### Systeem Starten
 
-Alle services worden in de juiste volgorde gestart door één enkel script. Zorg ervoor dat het script uitvoerbaar is (`chmod +x SpotAI-Launcher.sh`).
+Alle services worden beheerd en gestart via het ROS 2 launch-systeem. Dit zorgt voor robuustheid en automatisch herstarten van services.
 
-```bash
-bash SpotAI-Launcher.sh
-```
+1.  **Bouw de ROS 2 Package:**
+    Navigeer naar de root van de `spotai` workspace en bouw de package:
+    ```bash
+    colcon build
+    ```
+
+2.  **Source de Workspace:**
+    Voeg de workspace toe aan je shell-omgeving:
+    ```bash
+    source install/setup.bash
+    ```
+
+3.  **Start het Systeem:**
+    Start alle Spot-AI services met één commando:
+    ```bash
+    ros2 launch spotai spotai.launch.py
+    ```

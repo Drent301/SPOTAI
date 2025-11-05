@@ -86,7 +86,7 @@ class PowerDriver:
             return self.get_power_stats() # Roep opnieuw aan (nu in simulatiemodus)
 
 
-def run_power_monitor():
+def main():
     """
     De hoofdloop voor de power manager service.
     """
@@ -95,24 +95,24 @@ def run_power_monitor():
 
     print("[PowerManager] Service gestart. Monitort batterijstatus.")
 
-    while True:
-        try:
-            stats = driver.get_power_stats()
-
-            # Schrijf de status naar de StateBus
-            bus.set_value("power_state", stats)
-            bus.set_value("is_charging", stats["is_charging"]) # Ook apart voor de Arbiter
-
-            if stats["percentage"] < 10.0:
-                print(f"[PowerManager] WAARSCHUWING: Batterij bijna leeg! {stats['percentage']}%")
-
-        except Exception as e:
-            print(f"[PowerManager] Fout in hoofdloop: {e}")
-
-        time.sleep(10) # Batterijstatus hoeft niet realtime
-
-if __name__ == "__main__":
     try:
-        run_power_monitor()
+        while True:
+            try:
+                stats = driver.get_power_stats()
+
+                # Schrijf de status naar de StateBus
+                bus.set_value("power_state", stats)
+                bus.set_value("is_charging", stats["is_charging"]) # Ook apart voor de Arbiter
+
+                if stats["percentage"] < 10.0:
+                    print(f"[PowerManager] WAARSCHUWING: Batterij bijna leeg! {stats['percentage']}%")
+
+            except Exception as e:
+                print(f"[PowerManager] Fout in hoofdloop: {e}")
+
+            time.sleep(10) # Batterijstatus hoeft niet realtime
     except KeyboardInterrupt:
         print("[PowerManager] Gestopt.")
+
+if __name__ == "__main__":
+    main()

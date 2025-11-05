@@ -31,9 +31,6 @@ class EmotionMapper:
     def _get_ui_state(self) -> dict:
         """Haalt de robotstatus op en vertaalt dit naar een UI-staat."""
         
-        # Herlaad de staat om de laatste info van andere modules te zien
-        self.bus.reload_state()
-        
         # Haal de huidige modus op van de ModeArbiter
         robot_action = self.bus.get_value("robot_action") 
         # Gebruik 'robot_mode' als fallback, hoewel 'robot_action' specifieker is
@@ -70,9 +67,8 @@ class EmotionMapper:
             try:
                 state = self._get_ui_state()
                 
-                # Schrijf de staat naar een JSON-bestand
-                with open(UI_STATE_FILE, 'w') as f:
-                    json.dump(state, f)
+                # Schrijf de UI-staat naar de StateBus voor de overlay
+                self.bus.set_value("ui_state", state)
                     
             except Exception as e:
                 print(f"[EmotionMapper] Fout bij schrijven UI-staat: {e}")
@@ -83,13 +79,12 @@ class EmotionMapper:
         self._running = False
         print("[EmotionMapper] Gestopt.")
 
-if __name__ == "__main__":
-    # Maak een 'data' map als deze niet bestaat
-    data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
-    os.makedirs(data_dir, exist_ok=True)
-    
+def main():
     mapper = EmotionMapper()
     try:
         mapper.run_loop()
     except KeyboardInterrupt:
         mapper.stop()
+
+if __name__ == "__main__":
+    main()
