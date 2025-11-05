@@ -10,3 +10,4 @@ fastapi
 openai
 langgraph
 sounddevice
+redis

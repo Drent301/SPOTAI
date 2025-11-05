@@ -70,7 +70,9 @@ class ModeArbiter:
             start_time = time.time()
             
             # Lees de geconsolideerde intentie uit de statebus
-            current_state = self.statebus.get_state()
+            current_state = self.statebus.get_all_values()
+            if not current_state:
+                current_state = {} # Zorg voor een lege dict als de statebus leeg is
             intent = current_state.get("current_consolidated_intent", {"type": "idle", "action": "monitor", "confidence": 1.0})
             
             final_action = self._determine_final_action(

@@ -5,6 +5,8 @@ __pycache__/
 .env
 
 # Data & Logs (deze wil je misschien wel back-uppen, maar niet altijd in Git)
-*.json
+data/statebus.json
+data/ui_state.json
 *.ndjson
 *.log
+dump.rdb

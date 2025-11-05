@@ -1,62 +1,50 @@
 import time
 import json
 import os
+import sys
 
-# Gebruik hetzelfde pad als de StateBus
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, 'data')
-STATE_FILE = os.path.join(DATA_DIR, 'statebus.json')
-
-def write_state(data):
-    """Een simpele 'statebus' schrijver."""
-    try:
-        # Zorg dat de map bestaat
-        os.makedirs(DATA_DIR, exist_ok=True)
-        # Lees de huidige staat
-        current_state = {}
-        if os.path.exists(STATE_FILE):
-            with open(STATE_FILE, 'r') as f:
-                current_state = json.load(f)
-
-        # Update de staat
-        current_state.update(data)
-
-        # Schrijf de nieuwe staat
-        with open(STATE_FILE, 'w') as f:
-            json.dump(current_state, f, indent=4)
-
-        print(f"[MockHardware] STATEBUS BIJGEWERKT: {data}")
-
-    except Exception as e:
-        print(f"[MockHardware] Fout bij schrijven statebus: {e}")
+# Voeg de hoofdmap toe voor core-imports
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from core.statebus import StateBus
 
 def simulate():
-    print("--- Hardware Simulator Gestart ---")
-    print(f"Schrijft naar: {STATE_FILE}")
+    print("--- Hardware Simulator Gestart (met Redis StateBus) ---")
+
+    bus = StateBus()
+
+    # Controleer of we verbinding hebben
+    if not bus._is_connected():
+        print("[MockHardware] Kan niet doorgaan zonder Redis-verbinding.")
+        return
 
     # Start-condities
-    write_state({"is_charging": False, "last_human_seen_ts": None, "pending_voice_command": None})
+    print("\n--- Setup: Initialisatie Testcondities ---")
+    bus.set_value("is_charging", False)
+    bus.set_value("vision_detections", []) # Lege lijst, geen detecties
+    bus.set_value("latest_intent", {}) # Leeg, geen spraak
 
     try:
         print("\n--- TEST 1: Wacht 5s (Robot is 'idle') ---")
         time.sleep(5)
 
         print("\n--- TEST 2: Simuleer 'mens gezien' ---")
-        write_state({"last_human_seen_ts": time.time()})
+        bus.set_value("vision_detections", [{"type": "gezicht", "emotie": "blij", "confidence": 0.95}])
         time.sleep(5) # Wacht 5s (Robot moet 'social' zijn)
 
         print("\n--- TEST 3: Simuleer 'spraakopdracht' ---")
-        write_state({
-            "last_voice_command_ts": time.time(),
-            "pending_voice_command": "wat is het weer vandaag"
-        })
+        bus.set_value("latest_intent", {"intent": "move_command", "confidence": 0.9})
         time.sleep(5) # Wacht 5s (Robot moet 'listening' zijn en Rasa aanroepen)
 
         print("\n--- TEST 4: Simuleer 'opladen' ---")
-        write_state({"is_charging": True})
+        bus.set_value("is_charging", True)
         time.sleep(5) # Wacht 5s (Robot moet 'charging' zijn)
 
         print("\n--- Simulatie Voltooid ---")
+        # Reset state voor de volgende run
+        bus.set_value("is_charging", False)
+        bus.set_value("vision_detections", [])
+        bus.set_value("latest_intent", {})
+
 
     except KeyboardInterrupt:
         print("Hardware simulator gestopt.")

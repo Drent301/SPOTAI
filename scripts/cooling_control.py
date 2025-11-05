@@ -76,7 +76,7 @@ class CoolingDriver:
             print(f"[CoolingDriver] FOUT: Kon ventilator-GPIO niet schakelen: {e}")
             self.gpio_ok = False # Stop met proberen
 
-def run_cooling_loop():
+def main():
     """
     De hoofdloop voor de cooling control service.
     """
@@ -103,4 +103,4 @@ def run_cooling_loop():
             GPIO.cleanup() # Zet pinnen terug naar input
 
 if __name__ == "__main__":
-    run_cooling_loop()
+    main()

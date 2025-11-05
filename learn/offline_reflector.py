@@ -77,6 +77,7 @@ class OfflineReflector:
         Voert een periodieke, zeer lichte reflectie uit over de laatste staat.
         """
         if self.bus.get_value("network_state") == "offline":
+            self.bus.set_value("last_local_query_ts", time.time())
             print("[OfflineReflector] Offline Mini-reflectie gestart...")
             
             last_error = self.bus.get_value("last_error_log", "Geen fouten gevonden.")
