@@ -6,9 +6,9 @@ from typing import Optional
 from core.statebus import StateBus 
 from core.config_manager import ConfigManager # NIEUWE IMPORT
 
-# !!! VERVANG DIT MET JE ECHTE DIGITALOCEAN IP-ADRES !!!
-# Let op: de IP-adres in de code is ter demonstratie en moet het IP van uw Droplet zijn.
-REFLECTOR_API_URL = "http://159.223.217.1/reflect"
+# --- AANGEPAST VOOR LOKALE API ---
+# De Reflector API draait nu lokaal op de Pi 5
+REFLECTOR_API_URL = "http://127.0.0.1:8000/reflect"
 
 class GptAgent:
     def __init__(self, statebus: StateBus):
@@ -31,12 +31,14 @@ class GptAgent:
 
     def check_connection(self) -> bool:
         """
-        Controleert de verbinding met de reflector_api op DigitalOcean.
+        Controleert de verbinding met de reflector_api (nu lokaal).
         Dit is de basis voor de network_state-logica.
         """
         try:
             # Probeer de root-endpoint aan te roepen
-            response = requests.get(REFLECTOR_API_URL.replace("/reflect", ""), timeout=5)
+            # We vervangen /reflect met de root / voor de check
+            local_api_root = REFLECTOR_API_URL.replace("/reflect", "")
+            response = requests.get(local_api_root, timeout=5)
             response.raise_for_status()
             
             # Als de verbinding succesvol is, stel de status in
@@ -44,13 +46,13 @@ class GptAgent:
             return True
         except requests.exceptions.RequestException:
             # Als de verbinding mislukt (timeout, 4xx/5xx, etc.)
-            print("[GptAgent] Connectie Fout: Kan DigitalOcean niet bereiken.")
+            print("[GptAgent] Connectie Fout: Kan lokale Reflector API niet bereiken.")
             self.statebus.set_value("network_state", "offline")
             return False
 
     def trigger_reflection(self, task_type: str = "strategy") -> Optional[dict]:
         """
-        Activeert een reflectie-call naar de DigitalOcean API.
+        Activeert een reflectie-call naar de LOKALE API.
         task_type: 'strategy' (GPT-4o) of 'basic_talk' (GPT-3.5-turbo)
         """
         # --- Stap 1: Model Switching (Kostenoptimalisatie) ---

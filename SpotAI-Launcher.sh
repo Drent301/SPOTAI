@@ -11,6 +11,10 @@ echo "[Launcher] Start Kernlogica (Intent, Agent)..."
 python3 core/intent_engine.py &
 python3 agent/agent_runtime.py &
 
+echo "[Launcher] Start Lokale API (Reflector)..."
+# Zorg dat het .env bestand met OPENAI_API_KEY in de root staat
+uvicorn reflector_api:app --host 127.0.0.1 --port 8000 &
+
 echo "[Launcher] Start Leermodules (Bandit, Reflector)..."
 python3 learn/learning_loop.py &
 
