@@ -11,3 +11,4 @@ openai
 langgraph
 sounddevice
 redis
+py_trees

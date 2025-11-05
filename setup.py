@@ -26,11 +26,11 @@ setup(
         'console_scripts': [
             # Hier definiëren we de 'executables' die de launch file kan aanroepen
             'intent_engine = core.intent_engine:main',
-            'agent_runtime = agent.agent_runtime:main_runtime_loop',
+            'agent_runtime = agent.agent_runtime:main',
             'learning_loop = learn.learning_loop:main',
             'emotion_mapper = ui.emotion_mapper:main',
             'hyperpixel_overlay = ui.hyperpixel_overlay:main',
-            'power_manager = scripts.power_manager:run_power_monitor',
+            'power_manager = scripts.power_manager:main',
             'cooling_control = scripts.cooling_control:main',
             'ros_bridge = core.ros_bridge:main',
             'vision_node = perception.ros2_vision_node:main',
