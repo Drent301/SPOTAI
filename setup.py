@@ -25,6 +25,8 @@ setup(
     entry_points={
         'console_scripts': [
             # Hier definiëren we de 'executables' die de launch file kan aanroepen
+            'mode_arbiter = core.mode_arbiter:main',
+            'gpt_agent = core.gpt_agent:main',
             'intent_engine = core.intent_engine:main',
             'agent_runtime = agent.agent_runtime:main',
             'learning_loop = learn.learning_loop:main',
