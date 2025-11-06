@@ -5,6 +5,7 @@ import subprocess
 import os
 import shutil
 import sys
+import threading
 
 # Voeg de hoofdmap toe voor core-imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -13,55 +14,75 @@ from core.config_manager import ConfigManager
 # --- Configuratie ---
 config = ConfigManager()
 PIPER_MODEL_PATH = config.get_setting("piper_model_path", "models/piper-model.onnx")
-SPEAKER_ID = 0
-# Het audio output device. Gebruik 'aplay -l' om de juiste naam te vinden, bijv. 'plughw:1,0'.
-AUDIO_DEVICE = "default"
+SPEAKER_ID = config.get_setting("tts_speaker_id", 0)
+# Het audio output device. Gebruik 'aplay -l' om de juiste naam te vinden.
+AUDIO_DEVICE = config.get_setting("tts_audio_device", "default")
 
 class PiperTTS:
     """ Robuuste implementatie van Piper TTS via de command-line. """
-    def __init__(self, logger):
+    def __init__(self, model_path, speaker_id, audio_device, logger):
         self.logger = logger
+        self.model_path = model_path
+        self.speaker_id = str(speaker_id)
+        self.audio_device = audio_device
+        self.is_speaking = threading.Lock() # Lock om te voorkomen dat meerdere zinnen tegelijk worden uitgesproken
 
         # Controleer of het model bestaat
-        if not os.path.exists(PIPER_MODEL_PATH):
-            raise FileNotFoundError(f"Piper-model niet gevonden op: '{PIPER_MODEL_PATH}'.")
+        if not os.path.exists(self.model_path):
+            raise FileNotFoundError(f"Piper-model niet gevonden op: '{self.model_path}'. Controleer 'piper_model_path' in config.json.")
 
         # Controleer of de benodigde executables bestaan
         if not shutil.which("piper"):
-            raise FileNotFoundError("'piper' executable niet gevonden. Zorg ervoor dat Piper TTS geïnstalleerd is.")
+            raise FileNotFoundError("'piper' executable niet gevonden. Zorg ervoor dat Piper TTS correct geïnstalleerd is.")
         if not shutil.which("aplay"):
              raise FileNotFoundError("'aplay' executable niet gevonden. Zorg ervoor dat ALSA utilities (alsa-utils) geïnstalleerd zijn.")
 
-        self.logger.info("PiperTTS (Stem) succesvol geïnitialiseerd.")
+        self.logger.info(f"PiperTTS (Stem) geïnitialiseerd met model '{os.path.basename(self.model_path)}' en speaker ID {self.speaker_id}.")
 
     def speak(self, text_to_speak):
-        self.logger.info(f"Piper TTS genereert audio voor: '{text_to_speak}'")
-        try:
-            # Dit is een gesimuleerde manier om Piper aan te roepen.
-            # Het genereert een WAV-bestand, speelt het af met 'aplay', en verwijdert het.
-            
-            output_file = "/tmp/tts_output.wav"
-            
-            # 1. Genereer audio
-            # (Dit vereist dat 'piper' in het systeem-PATH staat)
-            subprocess.run(
-                ['piper', '-m', PIPER_MODEL_PATH, '-s', str(SPEAKER_ID), '-f', output_file],
-                input=text_to_speak,
-                text=True,
-                check=True
-            )
+        """ Genereert en speelt audio af. Blokkeert tot het afspelen is voltooid. """
+        if self.is_speaking.locked():
+            self.logger.warn("TTS is al bezig met spreken, negeer nieuw verzoek.")
+            return
 
-            # 2. Speel audio af (op het specifieke device)
-            # (Dit vereist dat 'aplay' geïnstalleerd is)
-            subprocess.run(['aplay', '-D', AUDIO_DEVICE, output_file], check=True)
+        with self.is_speaking:
+            self.logger.info(f"Genereert audio voor: '{text_to_speak}'")
+            output_file = "/tmp/spotai_tts_output.wav"
             
-            # 3. Opruimen
-            os.remove(output_file)
-            
-            self.logger.info("Audio afgespeeld.")
+            try:
+                # 1. Genereer audio
+                piper_process = subprocess.run(
+                    ['piper', '-m', self.model_path, '-s', self.speaker_id, '-f', output_file],
+                    input=text_to_speak,
+                    text=True,
+                    check=True,
+                    capture_output=True # Vang stdout/stderr op
+                )
+                if piper_process.stderr:
+                    self.logger.warn(f"[Piper stderr]: {piper_process.stderr}")
 
-        except Exception as e:
-            self.logger.error(f"Fout tijdens TTS-generatie of afspelen: {e}")
+                # 2. Speel audio af
+                aplay_process = subprocess.run(
+                    ['aplay', '-D', self.audio_device, output_file],
+                    check=True,
+                    capture_output=True
+                )
+                if aplay_process.stderr:
+                    self.logger.warn(f"[aplay stderr]: {aplay_process.stderr}")
+
+                self.logger.info("Audio succesvol afgespeeld.")
+
+            except FileNotFoundError:
+                # Dit zou niet moeten gebeuren na de __init__ check, maar voor de zekerheid
+                self.logger.error(f"'{output_file}' niet gevonden. Is de audio generatie mislukt?")
+            except subprocess.CalledProcessError as e:
+                self.logger.error(f"Fout tijdens TTS-proces: {e.stderr}")
+            except Exception as e:
+                self.logger.error(f"Onverwachte fout tijdens TTS-generatie of afspelen: {e}")
+            finally:
+                # 3. Opruimen
+                if os.path.exists(output_file):
+                    os.remove(output_file)
 
 class TtsNode(Node):
     """
@@ -71,14 +92,15 @@ class TtsNode(Node):
     def __init__(self):
         super().__init__("spotai_tts_node")
         self.get_logger().info("TTS Node (Stem) gestart.")
+        self.tts_engine = None
 
         # --- Initialiseer Hardware/Modellen ---
         try:
-            self.tts_engine = PiperTTS(self.get_logger())
+            self.tts_engine = PiperTTS(PIPER_MODEL_PATH, SPEAKER_ID, AUDIO_DEVICE, self.get_logger())
         except FileNotFoundError as e:
-            self.get_logger().error(f"Initialisatiefout: {e}")
-            # Zorg ervoor dat de node niet verder start als de engine faalt
-            self.tts_engine = None
+            self.get_logger().error(f"KRITISCHE FOUT bij initialisatie: {e}")
+            if rclpy.ok():
+                rclpy.shutdown()
             return
 
         # --- ROS 2 Subscribers ---
@@ -87,18 +109,19 @@ class TtsNode(Node):
             "/tts/speak", # Het topic waar we op luisteren
             self._speak_callback,
             10)
-        self.get_logger().info("Luistert naar /tts/speak topic.")
+        self.get_logger().info(f"Luistert naar /tts/speak. Audio output: '{AUDIO_DEVICE}'.")
 
     def _speak_callback(self, msg):
-        """ Wordt aangeroepen zodra er een bericht binnenkomt op /tts/speak. """
-        if self.tts_engine is None:
-            self.get_logger().error("TTS engine is niet geïnitialiseerd, kan tekst niet uitspreken.")
+        """ Wordt aangeroepen zodra er een bericht binnenkomt. """
+        if not self.tts_engine:
+            self.get_logger.error("TTS engine niet beschikbaar, kan verzoek niet verwerken.")
             return
 
         text = msg.data
         if text:
-            self.get_logger().info(f"Bericht ontvangen om te spreken: '{text}'")
-            self.tts_engine.speak(text)
+            # Voer de 'speak' methode uit in een aparte thread om de ROS 2 callback niet te blokkeren.
+            speak_thread = threading.Thread(target=self.tts_engine.speak, args=(text,), daemon=True)
+            speak_thread.start()
 
     def stop(self):
         self.get_logger().info("TTS Node stoppen...")
@@ -106,17 +129,18 @@ class TtsNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    
+    tts_node = None
     try:
         tts_node = TtsNode()
-        # rclpy.spin() houdt de node levend om op berichten te wachten
-        rclpy.spin(tts_node) 
+        if rclpy.ok():
+            rclpy.spin(tts_node)
     except KeyboardInterrupt:
         print("[Main] Stop-signaal ontvangen.")
     finally:
-        if 'tts_node' in locals():
+        if tts_node:
             tts_node.stop()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
