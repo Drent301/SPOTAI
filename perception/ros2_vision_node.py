@@ -4,6 +4,11 @@ import cv2
 import json
 import time
 import os
+import sys
+
+# Voeg de hoofdmap toe voor core-imports
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from core.config_manager import ConfigManager
 
 # --- Echte Hardware Imports ---
 # Zorg ervoor dat de Hailo SDK correct geïnstalleerd is
@@ -12,14 +17,12 @@ try:
     from hailo_sdk_client import ClientRunner
     HAILO_ENABLED = True
 except ImportError:
-    print("[VisionNode] WAARSCHUWING: Hailo SDK niet gevonden. Start in simulatiemodus.")
+    print("[VisionNode] WAARSCHUWING: Hailo SDK niet gevonden. Kan de VisionNode niet starten.")
     HAILO_ENABLED = False
 
 # Importeer de ROS 2 standaard berichttypes
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
-
-from core.config_manager import ConfigManager
 
 # --- CONFIGURATIE ---
 # Het pad naar het Hailo-model wordt nu centraal beheerd in data/config.json
@@ -31,7 +34,7 @@ class HailoRunner:
     """ Echte implementatie van de Hailo-inferentie. """
     def __init__(self, hef_path):
         if not HAILO_ENABLED:
-            raise RuntimeError("Hailo SDK is niet beschikbaar.")
+            raise ImportError("De Hailo SDK is niet geïnstalleerd of beschikbaar in de Python-omgeving.")
 
         print("[VisionNode] Initialiseren van Hailo ClientRunner...")
 
@@ -49,6 +52,7 @@ class HailoRunner:
 
         # Laad het HEF-model
         self.runner = ClientRunner(hef_path=hef_path, device_ids=[device_id])
+        print("[VisionNode] Hailo ClientRunner succesvol geladen.")
 
     def infer(self, frame):
         """ Voert inferentie uit en formatteert de output. """
@@ -97,9 +101,10 @@ class VisionNode(Node):
     def __init__(self):
         super().__init__("spotai_vision_node")
         self.get_logger().info("Vision Node gestart.")
+        self.hailo_device = None
+        self.capture = None
 
         # --- Initialiseer Hardware ---
-        self.hailo_device = None
         try:
             # 1. Camera (OpenCV)
             self.capture = cv2.VideoCapture(0)
@@ -108,34 +113,30 @@ class VisionNode(Node):
             self.get_logger().info("Camera succesvol geïnitialiseerd.")
 
             # 2. Hailo AI Accelerator
-            if HAILO_ENABLED:
-                try:
-                    self.hailo_device = HailoRunner(HAILO_HEF_PATH)
-                    self.get_logger().info("Hailo-8 AI accelerator succesvol geïnitialiseerd.")
-                except (RuntimeError, FileNotFoundError) as e:
-                    self.get_logger().warn(f"Kon Hailo niet initialiseren ({e}). Val terug op simulatie.")
-            else:
-                 self.get_logger().warn("Hailo SDK niet gevonden. Val terug op simulatie.")
+            self.hailo_device = HailoRunner(HAILO_HEF_PATH)
+            self.get_logger().info("Hailo-8 AI accelerator succesvol geïnitialiseerd.")
 
-        except Exception as e:
-            self.get_logger().error(f"Hardware-initialisatiefout: {e}")
-            # Stop de node als de camera al faalt
+        except (IOError, ImportError, FileNotFoundError, RuntimeError) as e:
+            self.get_logger().error(f"KRITISCHE FOUT bij hardware-initialisatie: {e}")
+            # Stop de node als hardware faalt
+            if self.capture:
+                self.capture.release()
+            # Zet rclpy.ok() op False om de main loop te stoppen
+            if rclpy.ok():
+                rclpy.shutdown()
             return
 
         # --- ROS 2 Publishers ---
-        # 1. Publisher voor ruwe beelden (optioneel, voor debuggen)
-        self.image_pub = self.create_publisher(Image, "/vision/raw_image", 10)
-        
-        # 2. Publisher voor de detecties (als JSON-string)
-        # De ROSBridge moet hierop abonneren (of de IntentEngine direct)
         self.detections_pub = self.create_publisher(String, "/vision/detections", 10)
-        
-        self.get_logger().info("ROS 2 publishers aangemaakt.")
+        self.get_logger().info("ROS 2 publisher voor /vision/detections aangemaakt.")
 
     def run_inference_loop(self):
         """ De hoofdloop die frames leest en inferentie uitvoert. """
+        if not rclpy.ok():
+             self.get_logger().error("Node is niet correct geïnitialiseerd, inference loop wordt niet gestart.")
+             return
+
         self.get_logger().info("Inference loop gestart...")
-        
         while rclpy.ok():
             try:
                 ret, frame = self.capture.read()
@@ -144,54 +145,40 @@ class VisionNode(Node):
                     time.sleep(0.5)
                     continue
 
-                # --- Stap 1: Inferentie (Hailo of Simulatie) ---
-                detections = []
-                if self.hailo_device:
-                    # Echte inferentie
-                    detections = self.hailo_device.infer(frame)
-                else:
-                    # Simulatie-modus
-                    time.sleep(0.05) # Simuleer vertraging
-                    detections = [{"type": "gezicht", "confidence": 0.9, "bbox": [110, 160, 210, 360]}]
+                # --- Stap 1: Inferentie ---
+                detections = self.hailo_device.infer(frame)
 
+                # --- Stap 2: Publiceer Detecties ---
                 if detections:
-                    # --- Stap 2: Publiceer Detecties ---
-                    # Converteer de detectie-lijst naar een JSON-string
                     detection_msg = String()
                     detection_msg.data = json.dumps(detections)
-                    
                     self.detections_pub.publish(detection_msg)
-                    
-                    # Log alleen als er iets wordt gezien
-                    # self.get_logger().info(f"Gepubliceerd: {detection_msg.data}")
 
-                # --- Stap 3: Publiceer Ruw Beeld (Optioneel) ---
-                # (Dit kost veel bandbreedte, alleen aanzetten voor debuggen)
-                # self.image_pub.publish(...) 
-                
-                # (We hebben geen spin_once nodig als we alleen publiceren)
-                
             except Exception as e:
                 self.get_logger().error(f"Fout in inference loop: {e}")
                 time.sleep(1)
 
     def stop(self):
         self.get_logger().info("Vision Node stoppen...")
-        self.capture.release()
+        if self.capture:
+            self.capture.release()
         self.destroy_node()
 
 def main(args=None):
     rclpy.init(args=args)
-    
+    vision_node = None
     try:
         vision_node = VisionNode()
-        vision_node.run_inference_loop() # Deze functie is de blokkerende loop
+        # Controleer of de node correct is geïnitialiseerd voordat de loop start
+        if rclpy.ok():
+            vision_node.run_inference_loop()
     except KeyboardInterrupt:
         print("[Main] Stop-signaal ontvangen.")
     finally:
-        if 'vision_node' in locals():
+        if vision_node:
             vision_node.stop()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

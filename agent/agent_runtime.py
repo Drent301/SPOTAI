@@ -64,10 +64,10 @@ def call_model(state: AgentState) -> AgentState:
     
     messages = [HumanMessage(content=state["input"])]
     
-    # We forceren de Tool Call voor deze LangGraph test
-    # De output van deze functie is wat GPT zou genereren als reactie op de input.
-    # We behouden de gehardcodeerde test-toolcall die we in eerdere stappen gevalideerd hebben.
-    return {"chat_history": messages, "tool_calls": [{"name": "set_config", "args": {"key": "OBSTACLE_RESPONSE_SPEED", "value": "0.8"}}]} 
+    # Roep het model aan om de tool call te genereren
+    response = agent_with_tools.invoke(messages)
+
+    return {"chat_history": messages, "tool_calls": response.tool_calls}
 
 
 def execute_tool(state: AgentState) -> AgentState:
