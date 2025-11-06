@@ -19,9 +19,12 @@ except ImportError:
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 
+from core.config_manager import ConfigManager
+
 # --- CONFIGURATIE ---
-# TODO: Vervang dit pad door de locatie van het gecompileerde Hailo-model
-HAILO_HEF_PATH = "/path/to/your/model.hef"
+# Het pad naar het Hailo-model wordt nu centraal beheerd in data/config.json
+config = ConfigManager()
+HAILO_HEF_PATH = config.get_setting("hailo_model_path", "models/default.hef")
 
 
 class HailoRunner:

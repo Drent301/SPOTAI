@@ -6,12 +6,15 @@ import vosk
 import json
 import queue
 import os
+import sys
+
+# Voeg de hoofdmap toe voor core-imports
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from core.config_manager import ConfigManager
 
 # --- Configuratie ---
-# Het pad naar het Vosk-model. Download een model van https://alphacephei.com/vosk/models
-# en plaats het in een 'models' map in de root van dit project.
-# Voorbeeld: 'models/vosk-model-small-nl-0.22'
-MODEL_PATH = "models/vosk-model" # TODO: Zorg ervoor dat dit pad klopt!
+config = ConfigManager()
+MODEL_PATH = config.get_setting("vosk_model_path", "models/vosk-model")
 
 # De ID van de input device. Laat op None voor de default microfoon.
 # Om de juiste ID te vinden, run: python3 -m sounddevice
