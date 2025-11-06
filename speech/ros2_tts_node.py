@@ -4,11 +4,15 @@ from std_msgs.msg import String
 import subprocess
 import os
 import shutil
+import sys
+
+# Voeg de hoofdmap toe voor core-imports
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from core.config_manager import ConfigManager
 
 # --- Configuratie ---
-# Het pad naar het Piper TTS-model. Download een model van https://huggingface.co/rhasspy/piper-voices/tree/main
-# en plaats het in de 'models' map. Voorbeeld: 'models/nl_NL-mls-medium.onnx'
-PIPER_MODEL_PATH = "models/piper-tts-model.onnx" # TODO: Zorg ervoor dat dit pad klopt!
+config = ConfigManager()
+PIPER_MODEL_PATH = config.get_setting("piper_model_path", "models/piper-model.onnx")
 SPEAKER_ID = 0
 # Het audio output device. Gebruik 'aplay -l' om de juiste naam te vinden, bijv. 'plughw:1,0'.
 AUDIO_DEVICE = "default"
