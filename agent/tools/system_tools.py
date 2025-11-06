@@ -12,7 +12,7 @@ def _execute_service_command(service_name: str, command: str) -> bool:
     whitelisted_services = [
         "perception_processor",
         "speech_processor",
-        "motor_bridge",
+        "ros_bridge", # Vervangen
         "intent_engine"
     ]
     

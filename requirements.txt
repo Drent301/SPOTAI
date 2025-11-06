@@ -12,3 +12,6 @@ langgraph
 sounddevice
 redis
 py_trees
+ollama
+faiss-cpu
+sentence-transformers

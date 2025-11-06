@@ -15,18 +15,25 @@ async def handle_parse(request: Request):
         
         print(f"[MockRasa] Verzoek ontvangen: '{text}'")
         
-        # Simpele logica om een intent te bepalen
-        intent_name = "intent_algemeen"
-        if "weer" in text:
-            intent_name = "intent_weer"
-        elif "hallo" in text:
-            intent_name = "intent_groet"
+        # Simpele logica om de intenties uit intent_engine.py te herkennen
+        intent_name = "unknown_intent" # Default
+        confidence = 0.6
+
+        if "loop" in text or "vooruit" in text or "stap" in text:
+            intent_name = "move_command"
+            confidence = 0.98
+        elif "naam" in text or "heet je" in text or "wie ben je" in text:
+            intent_name = "query_name"
+            confidence = 0.98
+        elif "hallo" in text or "hoi" in text:
+            intent_name = "intent_groet" # Behoud bestaande logica
+            confidence = 0.95
             
         # Dit is de datastructuur die de intent_engine verwacht
         response_json = {
             "intent": {
                 "name": intent_name,
-                "confidence": 0.95 
+                "confidence": confidence
             },
             "entities": [],
             "text": text

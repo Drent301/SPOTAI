@@ -5,10 +5,17 @@ import sounddevice as sd
 import vosk
 import json
 import queue
+import os
 
 # --- Configuratie ---
-MODEL_PATH = "pad/naar/je/vosk-model" # TODO: Vervang dit door het juiste pad
-DEVICE_ID = None # TODO: Zet hier de ID van je ReSpeaker-microfoon (gebruik 'sd.query_devices()')
+# Het pad naar het Vosk-model. Download een model van https://alphacephei.com/vosk/models
+# en plaats het in een 'models' map in de root van dit project.
+# Voorbeeld: 'models/vosk-model-small-nl-0.22'
+MODEL_PATH = "models/vosk-model" # TODO: Zorg ervoor dat dit pad klopt!
+
+# De ID van de input device. Laat op None voor de default microfoon.
+# Om de juiste ID te vinden, run: python3 -m sounddevice
+DEVICE_ID = None
 SAMPLE_RATE = 16000
 BLOCK_SIZE = 8000
 
@@ -26,8 +33,10 @@ class AsrNode(Node):
         # --- Initialiseer Hardware/Modellen ---
         try:
             # 1. Vosk Model
+            if not os.path.exists(MODEL_PATH):
+                raise FileNotFoundError(f"Vosk-model niet gevonden op: '{MODEL_PATH}'. Download een model en update het pad.")
             self.model = vosk.Model(MODEL_PATH)
-            self.get_logger().info(f"Vosk model succesvol geladen.")
+            self.get_logger().info(f"Vosk model '{MODEL_PATH}' succesvol geladen.")
             
             # 2. Microfoon (SoundDevice)
             if DEVICE_ID is None:
