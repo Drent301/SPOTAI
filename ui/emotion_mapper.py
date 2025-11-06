@@ -46,8 +46,13 @@ class EmotionMapper:
         if network == "offline":
             return {"emotion": "offline", "color": KLEUR_OFFLINE}
 
-        # TODO: Voeg hier meer emoties toe (blij, luisteren, etc.)
-        # bijv. if robot_action == "approach_and_greet": ...
+        # Prioriteit 3: Visuele input
+        detections = self.bus.get_value("vision_detections")
+        if detections:
+            for det in detections:
+                if det.get("type") == "gezicht" and det.get("emotie") == "blij":
+                    # Gebruik een specifieke kleur voor "blij" of val terug op een standaard sociale kleur
+                    return {"emotion": "happy", "color": (255, 255, 0)} # Geel
 
         # Default: Idle
         default_color_hex = self.config.get_setting("EMOTIE_DISPLAY_KLEUR")

@@ -87,7 +87,7 @@ class IntentEngine:
             # De Behavior Tree's blackboard haalt zelf de volledige state op,
             # maar we halen hier specifieke waarden op voor de intentieconsolidatie.
             speech_result = self.statebus.get_value("latest_intent")
-            detections = self.statebus.get_value("detections")
+            detections = self.statebus.get_value("vision_detections") # <-- CORRECTE SLEUTEL
             touch_data = self.statebus.get_value("touch_data")
             
             # --- 2. CONSOLIDATIE (IntentEngine Logic) ---

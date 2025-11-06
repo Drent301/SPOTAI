@@ -3,21 +3,32 @@ from rclpy.node import Node
 from std_msgs.msg import String
 import subprocess
 import os
+import shutil
 
 # --- Configuratie ---
-PIPER_MODEL_PATH = "pad/naar/je/piper-model.onnx" # TODO: Vervang dit
-SPEAKER_ID = 0 # TODO: Pas aan indien nodig voor je model
-AUDIO_DEVICE = "default" # TODO: Pas aan naar je ReSpeaker output, bijv. 'plughw:1,0'
+# Het pad naar het Piper TTS-model. Download een model van https://huggingface.co/rhasspy/piper-voices/tree/main
+# en plaats het in de 'models' map. Voorbeeld: 'models/nl_NL-mls-medium.onnx'
+PIPER_MODEL_PATH = "models/piper-tts-model.onnx" # TODO: Zorg ervoor dat dit pad klopt!
+SPEAKER_ID = 0
+# Het audio output device. Gebruik 'aplay -l' om de juiste naam te vinden, bijv. 'plughw:1,0'.
+AUDIO_DEVICE = "default"
 
-class PiperTTSMock:
-    """ 
-    Mock-klasse om Piper TTS te simuleren via de command-line.
-    Vervang dit door de echte Piper Python library (indien beschikbaar) 
-    of een robuustere subprocess-aanroep.
-    """
+class PiperTTS:
+    """ Robuuste implementatie van Piper TTS via de command-line. """
     def __init__(self, logger):
         self.logger = logger
-        self.logger.info("PiperTTSMock (Stem) geïnitialiseerd.")
+
+        # Controleer of het model bestaat
+        if not os.path.exists(PIPER_MODEL_PATH):
+            raise FileNotFoundError(f"Piper-model niet gevonden op: '{PIPER_MODEL_PATH}'.")
+
+        # Controleer of de benodigde executables bestaan
+        if not shutil.which("piper"):
+            raise FileNotFoundError("'piper' executable niet gevonden. Zorg ervoor dat Piper TTS geïnstalleerd is.")
+        if not shutil.which("aplay"):
+             raise FileNotFoundError("'aplay' executable niet gevonden. Zorg ervoor dat ALSA utilities (alsa-utils) geïnstalleerd zijn.")
+
+        self.logger.info("PiperTTS (Stem) succesvol geïnitialiseerd.")
 
     def speak(self, text_to_speak):
         self.logger.info(f"Piper TTS genereert audio voor: '{text_to_speak}'")
@@ -58,7 +69,13 @@ class TtsNode(Node):
         self.get_logger().info("TTS Node (Stem) gestart.")
 
         # --- Initialiseer Hardware/Modellen ---
-        self.tts_engine = PiperTTSMock(self.get_logger())
+        try:
+            self.tts_engine = PiperTTS(self.get_logger())
+        except FileNotFoundError as e:
+            self.get_logger().error(f"Initialisatiefout: {e}")
+            # Zorg ervoor dat de node niet verder start als de engine faalt
+            self.tts_engine = None
+            return
 
         # --- ROS 2 Subscribers ---
         self.subscription = self.create_subscription(
@@ -70,6 +87,10 @@ class TtsNode(Node):
 
     def _speak_callback(self, msg):
         """ Wordt aangeroepen zodra er een bericht binnenkomt op /tts/speak. """
+        if self.tts_engine is None:
+            self.get_logger().error("TTS engine is niet geïnitialiseerd, kan tekst niet uitspreken.")
+            return
+
         text = msg.data
         if text:
             self.get_logger().info(f"Bericht ontvangen om te spreken: '{text}'")

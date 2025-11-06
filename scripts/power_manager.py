@@ -42,17 +42,36 @@ class PowerDriver:
 
     def _read_i2c_register(self, register):
         """ Leest een specifiek register van de PiSugar. """
-        # TODO: Implementeer hier de specifieke I2C-leescommando's voor PiSugar 3
-        # Dit is een placeholder-implementatie
-        if register == "voltage":
-            # (Vervang dit door echte bus.read_word_data() etc.)
-            return random.uniform(3.7, 4.2) 
-        if register == "percentage":
-             # (Vervang dit door echte bus.read_byte_data() etc.)
-            return random.uniform(80.0, 81.0) # Simuleer 80%
-        if register == "is_charging":
-             # (Vervang dit door echte bus.read_byte_data() etc.)
-            return False
+        # --- ECHTE I2C IMPLEMENTATIE ---
+        if self.bus is None:
+            # Dit zou niet aangeroepen moeten worden als er geen bus is, maar als fallback.
+            return 0
+
+        try:
+            if register == "voltage":
+                # Registers 0x22 (hoog) en 0x23 (laag) voor voltage in mV
+                high_byte = self.bus.read_byte_data(PISUGAR_ADDR, 0x22)
+                low_byte = self.bus.read_byte_data(PISUGAR_ADDR, 0x23)
+                voltage_mv = (high_byte << 8) | low_byte
+                return voltage_mv / 1000.0
+
+            if register == "percentage":
+                # Register 0x2A voor batterijpercentage
+                percentage = self.bus.read_byte_data(PISUGAR_ADDR, 0x2A)
+                return percentage
+
+            if register == "is_charging":
+                # De 7e bit van register 0x02 geeft externe stroom aan
+                status_byte = self.bus.read_byte_data(PISUGAR_ADDR, 0x02)
+                is_powered = (status_byte >> 7) & 1
+                return bool(is_powered)
+
+        except Exception as e:
+            print(f"[PowerDriver] Fout bij het lezen van register '{register}': {e}")
+            # Val terug op simulatiemodus bij een I2C-fout
+            self.bus = None
+            return 0 # Geef een veilige waarde terug
+
         return 0
 
     def get_power_stats(self) -> dict:
@@ -70,7 +89,6 @@ class PowerDriver:
 
         # --- Echte Hardware Modus ---
         try:
-            # TODO: Vervang dit door de echte register-adressen
             voltage = self._read_i2c_register("voltage")
             percentage = self._read_i2c_register("percentage")
             is_charging = self._read_i2c_register("is_charging")
