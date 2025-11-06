@@ -12,6 +12,20 @@ def generate_launch_description():
     ld = LaunchDescription()
 
     # --- Cognitieve Laag ---
+    mode_arbiter_node = Node(
+        package='spotai', executable='mode_arbiter',
+        name='mode_arbiter',
+        respawn=True,
+        output='screen'
+    )
+
+    gpt_agent_node = Node(
+        package='spotai', executable='gpt_agent',
+        name='gpt_agent',
+        respawn=True,
+        output='screen'
+    )
+
     intent_engine_node = Node(
         package='spotai', executable='intent_engine',
         name='intent_engine',
@@ -100,6 +114,8 @@ def generate_launch_description():
     )
 
     # --- Voeg alle nodes en processen toe aan de Launch Description ---
+    ld.add_action(mode_arbiter_node)
+    ld.add_action(gpt_agent_node)
     ld.add_action(intent_engine_node)
     ld.add_action(agent_runtime_node)
     ld.add_action(reflector_api_proc)

@@ -17,7 +17,7 @@ Alle softwarematige simulaties zijn succesvol vervangen door daadwerkelijke hard
 
 ## Architectuur & Kerncomponenten
 
-Alle services worden parallel gestart door het hoofdscript: `SpotAI-Launcher.sh`.
+Alle services worden parallel gestart door het ROS 2 launch-systeem (`spotai.launch.py`).
 
 ### 1\. Het Cognitieve Brein (Python)
 
@@ -95,7 +95,7 @@ Installeer de benodigde Python-packages (idealiter in een virtual environment):
 pip install -r requirements.txt 
 ```
 
-*(Maak een `requirements.txt` aan met daarin o.a.: `rclpy`, `pygame`, `smbus2`, `RPi.GPIO`, `opencv-python`, `vosk`, `piper-tts`, `uvicorn`, `fastapi`, `openai`, `langgraph`, `sounddevice`)*
+*(De benodigde packages staan in `requirements.txt`)*
 
 ### Configuratie
 
